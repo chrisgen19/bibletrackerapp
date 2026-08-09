@@ -7,6 +7,13 @@ jest.mock('react-native-reanimated', () => {
   return require('./src/test-utils/reanimated-mock');
 });
 
+// Row ids come from expo-crypto, which is stubbed under Jest and would otherwise
+// return undefined and violate the primary-key constraint in repository tests.
+jest.mock('expo-crypto', () => ({
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  randomUUID: () => require('node:crypto').randomUUID(),
+}));
+
 // Native modules that have no meaningful behaviour under test. Domain tests never
 // touch these; component tests only need them to resolve.
 jest.mock('expo-haptics', () => ({

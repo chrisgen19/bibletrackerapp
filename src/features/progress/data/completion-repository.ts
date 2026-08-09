@@ -1,7 +1,7 @@
 import { and, asc, count, eq, gte, lte } from 'drizzle-orm';
 
 import type { BibleReference } from '@/data/bible/canon';
-import type { Database } from '@/db/client';
+import type { ReadingDatabase } from '@/db/client';
 import { readingCompletions, type ReadingCompletionRow } from '@/db/schema';
 import type { ReadingCompletion } from '@/features/reading-plan/domain/types';
 import type { DateKey } from '@/utils/date-key';
@@ -19,7 +19,7 @@ function toDomain(row: ReadingCompletionRow): ReadingCompletion {
 }
 
 /** Inclusive on both ends. Backs the calendar, which loads a month at a time. */
-export function getCompletionsForRange(db: Database, start: DateKey, end: DateKey): ReadingCompletion[] {
+export function getCompletionsForRange(db: ReadingDatabase, start: DateKey, end: DateKey): ReadingCompletion[] {
   return db
     .select()
     .from(readingCompletions)
@@ -30,7 +30,7 @@ export function getCompletionsForRange(db: Database, start: DateKey, end: DateKe
 }
 
 /** Streaks need the whole history, so this deliberately has no range. */
-export function getAllCompletions(db: Database): ReadingCompletion[] {
+export function getAllCompletions(db: ReadingDatabase): ReadingCompletion[] {
   return db
     .select()
     .from(readingCompletions)
@@ -39,7 +39,7 @@ export function getAllCompletions(db: Database): ReadingCompletion[] {
     .map(toDomain);
 }
 
-export function getCompletionsForDate(db: Database, localDate: DateKey): ReadingCompletion[] {
+export function getCompletionsForDate(db: ReadingDatabase, localDate: DateKey): ReadingCompletion[] {
   return db
     .select()
     .from(readingCompletions)
@@ -61,7 +61,7 @@ export interface MarkCompleteInput {
  * Runs in a transaction so a multi-chapter day is all-or-nothing, and re-marking a
  * day that is already complete is a no-op rather than a duplicate-key failure.
  */
-export function markReadingComplete(db: Database, input: MarkCompleteInput): void {
+export function markReadingComplete(db: ReadingDatabase, input: MarkCompleteInput): void {
   const completedAt = input.completedAt ?? Date.now();
 
   db.transaction((tx) => {
@@ -82,10 +82,10 @@ export function markReadingComplete(db: Database, input: MarkCompleteInput): voi
 }
 
 /** Undo: removes every chapter recorded on that local day. */
-export function removeReadingCompletion(db: Database, localDate: DateKey): void {
+export function removeReadingCompletion(db: ReadingDatabase, localDate: DateKey): void {
   db.delete(readingCompletions).where(eq(readingCompletions.localDate, localDate)).run();
 }
 
-export function countAllCompletions(db: Database): number {
+export function countAllCompletions(db: ReadingDatabase): number {
   return db.select({ value: count() }).from(readingCompletions).get()?.value ?? 0;
 }

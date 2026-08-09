@@ -72,8 +72,13 @@ export function TodayReadingCard({ day, onMarkRead, onOpenDetail }: TodayReading
     );
   }
 
-  const reference = formatReferenceSpan(day.scheduled.chapters);
-  const chapterCount = day.scheduled.chapters.length;
+  // A completed day shows what was actually recorded, which differs from the
+  // schedule after a custom log. The day sheet applies the same rule, and the two
+  // surfaces must not disagree about the same day.
+  const chapters =
+    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters;
+  const reference = formatReferenceSpan(chapters);
+  const chapterCount = chapters.length;
 
   return (
     <Card variant="raised">
