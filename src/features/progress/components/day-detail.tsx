@@ -9,11 +9,12 @@ import { Icon } from '@/components/icon';
 import { SegmentedControl, type SegmentOption } from '@/components/segmented-control';
 import { Text } from '@/components/text';
 import type { BibleReference } from '@/data/bible/canon';
-import { getCanonIndex } from '@/data/bible/canon-index';
+import { DEFAULT_CANON_ID, getCanonIndex } from '@/data/bible/canon-index';
 import { BookPicker } from '@/features/reading-plan/components/book-picker';
 import { ChapterPicker } from '@/features/reading-plan/components/chapter-picker';
 import { buildContinuationDraft } from '@/features/reading-plan/domain/continuation';
 import { formatReference, formatReferenceSpan } from '@/features/reading-plan/domain/reference';
+import type { CompletionLookup } from '@/features/reading-plan/domain/schedule';
 import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import { useTheme } from '@/theme/theme-provider';
 import { compareDateKeys, fromDateKey, type DateKey } from '@/utils/date-key';
@@ -32,9 +33,11 @@ interface DayDetailProps {
   onUndo: () => void;
   /** Moves the reading position so the next unread day follows on from a logged chapter. */
   onChangePlan: (draft: ReadingPlanDraft) => void;
+  /** Lets a continuation skip days that are already recorded. */
+  completions: CompletionLookup;
 }
 
-export function DayDetail({ day, today, onComplete, onUndo, onChangePlan }: DayDetailProps) {
+export function DayDetail({ day, today, onComplete, onUndo, onChangePlan, completions }: DayDetailProps) {
   const theme = useTheme();
   const [tab, setTab] = useState<Tab>('plan');
 
@@ -66,7 +69,13 @@ export function DayDetail({ day, today, onComplete, onUndo, onChangePlan }: DayD
           onUndo={onUndo}
         />
       ) : (
-        <CustomPanel day={day} today={today} onComplete={onComplete} onChangePlan={onChangePlan} />
+        <CustomPanel
+          day={day}
+          today={today}
+          onComplete={onComplete}
+          onChangePlan={onChangePlan}
+          completions={completions}
+        />
       )}
     </View>
   );
@@ -161,6 +170,7 @@ interface CustomPanelProps {
   today: DateKey;
   onComplete: (chapters: readonly BibleReference[]) => void;
   onChangePlan: (draft: ReadingPlanDraft) => void;
+  completions: CompletionLookup;
 }
 
 /**
@@ -170,9 +180,9 @@ interface CustomPanelProps {
  * continues on from there — the schedule and the log stay independent unless the
  * user explicitly links them.
  */
-function CustomPanel({ day, today, onComplete, onChangePlan }: CustomPanelProps) {
+function CustomPanel({ day, today, onComplete, onChangePlan, completions }: CustomPanelProps) {
   const theme = useTheme();
-  const canonId = day.plan?.canonId ?? 'protestant';
+  const canonId = day.plan?.canonId ?? DEFAULT_CANON_ID;
   const index = getCanonIndex(canonId);
 
   const [reference, setReference] = useState<BibleReference>(
@@ -193,6 +203,7 @@ function CustomPanel({ day, today, onComplete, onChangePlan }: CustomPanelProps)
       loggedDate: day.date,
       today,
       plan: day.plan,
+      completions,
     });
 
     if (draft === null) return;
@@ -208,7 +219,7 @@ function CustomPanel({ day, today, onComplete, onChangePlan }: CustomPanelProps)
         { text: 'Continue from here', onPress: () => onChangePlan(draft) },
       ],
     );
-  }, [reference, day.date, day.plan, today, onComplete, onChangePlan, index]);
+  }, [reference, day.date, day.plan, today, onComplete, onChangePlan, index, completions]);
 
   return (
     <View>

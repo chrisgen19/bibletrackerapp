@@ -24,6 +24,11 @@ already installed.
 
 SF Symbols render natively on iOS; other platforms fall back to bundled vector icons.
 
+**Android is not supported in V1.** `pnpm android` and the `android` block in
+`app.json` exist because Expo generates them, and the code has no iOS-only APIs — but
+nothing has been built or tested on Android, and the layout, haptics and notification
+behaviour are unverified there. Treat it as untried rather than working.
+
 ## Verifying
 
 ```bash

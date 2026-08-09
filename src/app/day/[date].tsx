@@ -78,6 +78,7 @@ export default function DayDetailScreen() {
         onComplete={handleComplete}
         onUndo={handleUndo}
         onChangePlan={handleChangePlan}
+        completions={completionLookup}
       />
     </View>
   );

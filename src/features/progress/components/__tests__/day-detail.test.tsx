@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 
 import { makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
+import { createCompletionLookup } from '@/features/reading-plan/domain/schedule';
 import type { DayReading } from '@/features/reading-plan/domain/types';
 import { fireEvent, renderWithTheme } from '@/test-utils/render';
 
@@ -30,6 +31,7 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       onComplete={onComplete}
       onUndo={onUndo}
       onChangePlan={onChangePlan}
+      completions={handlers.completions ?? createCompletionLookup([])}
     />,
   );
   return { onComplete, onUndo, onChangePlan, ...queries };
@@ -121,6 +123,8 @@ describe('DayDetail — custom tab', () => {
   });
 
   it('does not offer to continue past the end of the canon', async () => {
+    // CustomPanel seeds its state from the day's recorded chapter, so setting
+    // completedChapters to Revelation 22 is what puts the picker at the canon end.
     const { getByTestId, onComplete } = await renderDetail(
       makeDay({
         completedChapters: [{ bookId: 'REV', chapter: 22 }],
@@ -136,7 +140,7 @@ describe('DayDetail — custom tab', () => {
   });
 
   it('lets a day the plan never covered still be logged', async () => {
-    const { getByTestId, getByText } = await renderDetail(
+    const { getByTestId, getByText, onComplete } = await renderDetail(
       makeDay({
         date: '2026-07-01',
         status: 'before-plan',
@@ -146,6 +150,10 @@ describe('DayDetail — custom tab', () => {
     );
 
     expect(getByText('You can still record what you read using the Custom tab.')).toBeTruthy();
-    expect(getByTestId('day-tab-custom')).toBeTruthy();
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+    // Exercises the plan: null path through buildContinuationDraft.
+    expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });
