@@ -9,11 +9,20 @@ No account, no backend, no network calls. SQLite on the device is the source of 
 
 ```bash
 pnpm install
-pnpm ios          # or: pnpm start
+pnpm ios          # builds and launches a development build
 ```
 
-Requires Node 20+ and Xcode for the iOS simulator. SF Symbols render natively on iOS;
-other platforms fall back to bundled vector icons.
+Requires Node 20+, Xcode, and CocoaPods.
+
+**Expo Go will not run this app.** `@react-native-community/datetimepicker` is not
+bundled in Expo Go, so a development build is required. `pnpm ios` handles it: it
+prebuilds the native `ios/` directory (gitignored), runs `pod install`, then builds and
+launches on the simulator. The first run takes several minutes; later runs are fast.
+
+`pnpm start` alone only serves the JS bundle — useful once a development build is
+already installed.
+
+SF Symbols render natively on iOS; other platforms fall back to bundled vector icons.
 
 ## Verifying
 
