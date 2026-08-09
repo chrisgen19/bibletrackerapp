@@ -84,26 +84,42 @@ describe('BookPicker', () => {
   });
 });
 
+/**
+ * The grid virtualises at 50 cells. An "is chapter N+1 absent?" assertion is only
+ * meaningful for books shorter than that window — beyond it the cell is unmounted
+ * whatever the underlying count, so the assertion cannot fail. These cases
+ * therefore assert the *exact* number of cells rendered, which pins the grid to
+ * the canon rather than merely to the viewport.
+ *
+ * Chapter counts themselves (Psalms 150, Genesis 50, ...) are covered by the canon
+ * unit tests; what matters here is that the picker uses them.
+ */
+const SHORT_BOOKS = [
+  { bookId: 'JUD', name: 'Jude', chapters: 1 },
+  { bookId: '2JN', name: '2 John', chapters: 1 },
+  { bookId: 'JON', name: 'Jonah', chapters: 4 },
+  { bookId: '1CO', name: '1 Corinthians', chapters: 16 },
+  { bookId: 'REV', name: 'Revelation', chapters: 22 },
+] as const;
+
 describe('ChapterPicker', () => {
-  it('sizes the grid to the selected book', async () => {
-    const { getByLabelText, queryByLabelText } = await renderChapterPicker('REV');
-    // Revelation has 22 chapters — not Genesis's 50.
-    expect(getByLabelText('Chapter 22')).toBeTruthy();
-    expect(queryByLabelText('Chapter 23')).toBeNull();
+  it.each(SHORT_BOOKS)('renders exactly $chapters chapters for $name', async ({ bookId, chapters }) => {
+    const { getAllByLabelText, getByLabelText, queryByLabelText } = await renderChapterPicker(bookId);
+
+    expect(getAllByLabelText(/^Chapter \d+$/)).toHaveLength(chapters);
+    expect(getByLabelText(`Chapter ${chapters}`)).toBeTruthy();
+    expect(queryByLabelText(`Chapter ${chapters + 1}`)).toBeNull();
   });
 
-  it('bounds a long book at its real chapter count', async () => {
-    const { getByLabelText, queryByLabelText } = await renderChapterPicker('PSA');
-    expect(getByLabelText('Chapter 1')).toBeTruthy();
-    // Psalms stops at 150. Deeper rows are virtualised away, so the meaningful
-    // assertion is the upper bound rather than a specific mounted cell.
-    expect(queryByLabelText('Chapter 151')).toBeNull();
-  });
+  it('grows the grid for a longer book', async () => {
+    // Psalms exceeds the virtualisation window, so the count cannot be pinned here.
+    // What is checkable is that it renders strictly more than a short book does.
+    const psalms = await renderChapterPicker('PSA');
+    const revelation = await renderChapterPicker('REV');
 
-  it('handles single-chapter books', async () => {
-    const { getByLabelText, queryByLabelText } = await renderChapterPicker('JUD');
-    expect(getByLabelText('Chapter 1')).toBeTruthy();
-    expect(queryByLabelText('Chapter 2')).toBeNull();
+    expect(psalms.getAllByLabelText(/^Chapter \d+$/).length).toBeGreaterThan(
+      revelation.getAllByLabelText(/^Chapter \d+$/).length,
+    );
   });
 
   it('reports the chosen chapter and closes', async () => {
