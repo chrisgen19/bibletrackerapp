@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, StyleSheet, Switch, View } from 'react-native';
+import { Platform, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
@@ -13,6 +13,7 @@ import { Text } from '@/components/text';
 import type { AppearancePreference } from '@/db/settings-repository';
 import { formatReference } from '@/features/reading-plan/domain/reference';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
+import { confirmResetProgress, describeResetImpact } from '@/features/reading-plan/reset-progress';
 import { useReminderSettings } from '@/features/reminders/hooks/use-reminder-settings';
 import { formatReminderTime, parseReminderTime } from '@/features/reminders/notifications';
 import { useTheme } from '@/theme/theme-provider';
@@ -28,24 +29,11 @@ export default function SettingsScreen() {
   const [timePickerOpen, setTimePickerOpen] = useState(Platform.OS === 'ios');
 
   const handleReset = useCallback(() => {
-    Alert.alert(
-      'Reset progress?',
-      'This permanently deletes your reading plan and every completed day on this device. It cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset Everything',
-          style: 'destructive',
-          onPress: () => {
-            resetProgress();
-            // The daily reminder would otherwise keep firing for a plan that no
-            // longer exists, and tapping it would open a day with nothing to read.
-            void reminder.setEnabled(false);
-            router.replace('/');
-          },
-        },
-      ],
-    );
+    confirmResetProgress({
+      resetProgress,
+      disableReminder: () => void reminder.setEnabled(false),
+      onComplete: () => router.replace('/'),
+    });
   }, [resetProgress, router, reminder]);
 
   const startReference =
@@ -161,11 +149,7 @@ export default function SettingsScreen() {
           testID="reset-progress"
         />
         <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
-          {completions.length === 0
-            ? 'You have no completed readings yet.'
-            : `This will remove ${completions.length} completed ${
-                completions.length === 1 ? 'chapter' : 'chapters'
-              }.`}
+          {describeResetImpact(completions.length)}
         </Text>
       </View>
     </Screen>
