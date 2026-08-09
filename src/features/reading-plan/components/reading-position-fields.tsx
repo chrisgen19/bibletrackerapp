@@ -1,5 +1,5 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { format } from 'date-fns';
+import { format, isToday as isTodayDate } from 'date-fns';
 import { useState } from 'react';
 import { Platform, View } from 'react-native';
 
@@ -23,28 +23,35 @@ interface ReadingPositionFieldsProps {
   canonId: string;
   value: ReadingPosition;
   onChange: (next: ReadingPosition) => void;
-  /** Only the custom-start flow lets the user move the plan's first day. */
-  showStartDate?: boolean;
+  /**
+   * Offers the start date as a collapsed disclosure. Off for the settings editor,
+   * where moving your position always takes effect from today.
+   */
+  allowStartDate?: boolean;
 }
 
 /**
  * Book / chapter / start-date editor shared by onboarding and the settings screen.
  *
  * Choosing a book clamps the chapter into range, so an invalid reference can never
- * reach the domain layer.
+ * reach the domain layer. The start date stays collapsed and reading "Today" unless
+ * the user opens it, keeping the common path a two-field decision.
  */
 export function ReadingPositionFields({
   canonId,
   value,
   onChange,
-  showStartDate = false,
+  allowStartDate = false,
 }: ReadingPositionFieldsProps) {
   const theme = useTheme();
   const [bookPickerOpen, setBookPickerOpen] = useState(false);
   const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
 
   const index = getCanonIndex(canonId);
   const book = index.getBook(value.bookId);
+  const startDay = fromDateKey(value.startDate);
+  const startsToday = isTodayDate(startDay);
 
   return (
     <View>
@@ -59,33 +66,45 @@ export function ReadingPositionFields({
           label="Chapter"
           value={String(value.chapter)}
           onPress={() => setChapterPickerOpen(true)}
-          last={!showStartDate}
+          last={!allowStartDate}
           testID="field-chapter"
         />
-        {showStartDate ? (
-          <View style={{ paddingHorizontal: theme.spacing.lg, paddingVertical: theme.spacing.md }}>
-            <Text variant="body" style={{ marginBottom: theme.spacing.sm }}>
-              Start date
-            </Text>
-            <DateTimePicker
-              value={fromDateKey(value.startDate)}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              accentColor={theme.colors.accent}
-              themeVariant={theme.scheme}
-              accessibilityLabel="Plan start date"
-              onChange={(_event, selected) => {
-                if (selected === undefined) return;
-                onChange({ ...value, startDate: toDateKey(selected) });
-              }}
+
+        {allowStartDate ? (
+          <>
+            <FieldRow
+              label="Start date"
+              value={startsToday ? 'Today' : format(startDay, 'd MMM yyyy')}
+              onPress={() => setDatePickerOpen((open) => !open)}
+              last
+              testID="field-start-date"
             />
-          </View>
+            {datePickerOpen ? (
+              <View style={{ paddingHorizontal: theme.spacing.sm, paddingBottom: theme.spacing.md }}>
+                <DateTimePicker
+                  value={startDay}
+                  mode="date"
+                  display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                  accentColor={theme.colors.accent}
+                  themeVariant={theme.scheme}
+                  accessibilityLabel="Plan start date"
+                  onChange={(_event, selected) => {
+                    if (Platform.OS !== 'ios') setDatePickerOpen(false);
+                    if (selected === undefined) return;
+                    onChange({ ...value, startDate: toDateKey(selected) });
+                  }}
+                />
+              </View>
+            ) : null}
+          </>
         ) : null}
       </Card>
 
-      {showStartDate ? (
+      {allowStartDate ? (
         <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
-          Your first reading lands on {format(fromDateKey(value.startDate), 'd MMMM yyyy')}.
+          {startsToday
+            ? 'Started earlier? Set the date your plan began and the calendar will fill in from there.'
+            : `Your plan begins on ${format(startDay, 'EEEE d MMMM')}, so earlier days will appear on your calendar.`}
         </Text>
       ) : null}
 
@@ -113,4 +132,3 @@ export function ReadingPositionFields({
     </View>
   );
 }
-

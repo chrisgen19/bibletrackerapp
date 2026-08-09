@@ -61,7 +61,14 @@ export interface DayReading {
   readonly plan: ReadingPlan | null;
 }
 
-export type StartMode = 'genesis' | 'continue' | 'custom';
+/**
+ * How onboarding seeds the first plan.
+ *
+ * `choose` covers both "I'm partway through" and "my plan began earlier": the start
+ * date defaults to today and is only surfaced if the user opens the disclosure, so
+ * the common case stays a two-field decision.
+ */
+export type StartMode = 'genesis' | 'choose';
 
 export interface ReadingPlanDraft {
   readonly canonId: string;

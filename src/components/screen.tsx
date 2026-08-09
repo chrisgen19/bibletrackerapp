@@ -29,11 +29,15 @@ export function Screen({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
+  // Only emit the edges that were asked for. React Native resolves the longhand
+  // `paddingLeft`/`paddingRight` ahead of a caller's `paddingHorizontal` regardless
+  // of array order, so emitting explicit zeroes here would silently flatten the
+  // horizontal padding of every screen that uses this component.
   const padding: ViewStyle = {
-    paddingTop: edges.includes('top') ? insets.top : 0,
-    paddingBottom: edges.includes('bottom') ? insets.bottom : 0,
-    paddingLeft: edges.includes('left') ? insets.left : 0,
-    paddingRight: edges.includes('right') ? insets.right : 0,
+    ...(edges.includes('top') ? { paddingTop: insets.top } : null),
+    ...(edges.includes('bottom') ? { paddingBottom: insets.bottom } : null),
+    ...(edges.includes('left') ? { paddingLeft: insets.left } : null),
+    ...(edges.includes('right') ? { paddingRight: insets.right } : null),
   };
 
   if (scroll) {

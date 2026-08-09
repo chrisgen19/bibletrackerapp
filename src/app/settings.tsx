@@ -1,13 +1,14 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, Switch, View } from 'react-native';
+import { Alert, Platform, StyleSheet, Switch, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { FieldRow } from '@/components/field-row';
 import { Screen } from '@/components/screen';
 import { SectionHeader } from '@/components/section-header';
+import { SegmentedControl, type SegmentOption } from '@/components/segmented-control';
 import { Text } from '@/components/text';
 import type { AppearancePreference } from '@/db/settings-repository';
 import { formatReference } from '@/features/reading-plan/domain/reference';
@@ -37,12 +38,15 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             resetProgress();
+            // The daily reminder would otherwise keep firing for a plan that no
+            // longer exists, and tapping it would open a day with nothing to read.
+            void reminder.setEnabled(false);
             router.replace('/');
           },
         },
       ],
     );
-  }, [resetProgress, router]);
+  }, [resetProgress, router, reminder]);
 
   const startReference =
     activePlan === null
@@ -192,7 +196,7 @@ function ReminderTimePicker({ time, onChange }: { time: string; onChange: (time:
   );
 }
 
-const APPEARANCE_OPTIONS: readonly { value: AppearancePreference; label: string }[] = [
+const APPEARANCE_OPTIONS: readonly SegmentOption<AppearancePreference>[] = [
   { value: 'system', label: 'System' },
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
@@ -205,47 +209,14 @@ function AppearanceSelector({
   value: AppearancePreference;
   onChange: (next: AppearancePreference) => void;
 }) {
-  const theme = useTheme();
-
   return (
-    <View
-      accessibilityRole="radiogroup"
-      style={[
-        styles.segmented,
-        { backgroundColor: theme.colors.surfaceSubtle, borderRadius: theme.radius.md, padding: 3 },
-      ]}
-    >
-      {APPEARANCE_OPTIONS.map((option) => {
-        const selected = option.value === value;
-        return (
-          <Pressable
-            key={option.value}
-            accessibilityRole="radio"
-            accessibilityState={{ selected }}
-            accessibilityLabel={option.label}
-            onPress={() => onChange(option.value)}
-            testID={`appearance-${option.value}`}
-            style={[
-              styles.segment,
-              {
-                backgroundColor: selected ? theme.colors.surface : 'transparent',
-                borderRadius: theme.radius.sm,
-              },
-              selected ? theme.shadows.card : null,
-            ]}
-          >
-            <Text
-              variant="callout"
-              color={selected ? 'primary' : 'secondary'}
-              align="center"
-              style={{ fontWeight: selected ? '600' : '400' }}
-            >
-              {option.label}
-            </Text>
-          </Pressable>
-        );
-      })}
-    </View>
+    <SegmentedControl
+      options={APPEARANCE_OPTIONS}
+      value={value}
+      onChange={onChange}
+      accessibilityLabel="Appearance"
+      testIDPrefix="appearance"
+    />
   );
 }
 
@@ -257,6 +228,4 @@ const styles = StyleSheet.create({
     minHeight: MIN_TOUCH_TARGET + 6,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
-  segmented: { flexDirection: 'row' },
-  segment: { flex: 1, minHeight: 38, alignItems: 'center', justifyContent: 'center' },
 });
