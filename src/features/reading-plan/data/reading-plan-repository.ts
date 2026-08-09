@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, isNull } from 'drizzle-orm';
 
-import type { Database } from '@/db/client';
+import type { ReadingDatabase } from '@/db/client';
 import { readingCompletions, readingPlans, type ReadingPlanRow } from '@/db/schema';
 import type { ReadingPlan, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import { addDaysToDateKey } from '@/utils/date-key';
@@ -25,7 +25,7 @@ function toDomain(row: ReadingPlanRow): ReadingPlan {
   };
 }
 
-export function getActiveReadingPlan(db: Database): ReadingPlan | null {
+export function getActiveReadingPlan(db: ReadingDatabase): ReadingPlan | null {
   const row = db
     .select()
     .from(readingPlans)
@@ -38,7 +38,7 @@ export function getActiveReadingPlan(db: Database): ReadingPlan | null {
 }
 
 /** Every segment, oldest first — the timeline the calendar and streaks read from. */
-export function getAllReadingPlans(db: Database): ReadingPlan[] {
+export function getAllReadingPlans(db: ReadingDatabase): ReadingPlan[] {
   return db
     .select()
     .from(readingPlans)
@@ -47,7 +47,7 @@ export function getAllReadingPlans(db: Database): ReadingPlan[] {
     .map(toDomain);
 }
 
-export function createReadingPlan(db: Database, draft: ReadingPlanDraft): ReadingPlan {
+export function createReadingPlan(db: ReadingDatabase, draft: ReadingPlanDraft): ReadingPlan {
   const plan: ReadingPlan = {
     id: createId(),
     canonId: draft.canonId,
@@ -71,7 +71,7 @@ export function createReadingPlan(db: Database, draft: ReadingPlanDraft): Readin
  * past date keeps resolving to the plan that actually governed it. Completions are
  * never modified.
  */
-export function replaceActiveReadingPlan(db: Database, draft: ReadingPlanDraft): ReadingPlan {
+export function replaceActiveReadingPlan(db: ReadingDatabase, draft: ReadingPlanDraft): ReadingPlan {
   return db.transaction((tx) => {
     const active = tx.select().from(readingPlans).where(eq(readingPlans.isActive, true)).all();
 
@@ -106,7 +106,7 @@ export function replaceActiveReadingPlan(db: Database, draft: ReadingPlanDraft):
 }
 
 /** Destructive: drops all plans and, by cascade, all completions. */
-export function resetAllProgress(db: Database): void {
+export function resetAllProgress(db: ReadingDatabase): void {
   db.transaction((tx) => {
     tx.delete(readingCompletions).run();
     tx.delete(readingPlans).run();

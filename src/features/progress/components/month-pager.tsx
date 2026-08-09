@@ -84,7 +84,7 @@ export function MonthPager({ window: monthWindow, today, onSelectDay, onStepMont
   );
 
   return (
-    <Animated.View style={containerStyle} onLayout={handleLayout}>
+    <Animated.View style={containerStyle} onLayout={handleLayout} testID="month-pager">
       {width === 0 ? null : (
         <ScrollView
           ref={scrollRef}
