@@ -22,16 +22,10 @@ const OPTIONS: readonly {
     icon: 'book.closed',
   },
   {
-    mode: 'continue',
-    title: 'Continue where I am',
+    mode: 'choose',
+    title: 'Choose where to start',
     description: "Pick the chapter you're up to. It becomes today's reading.",
     icon: 'flame',
-  },
-  {
-    mode: 'custom',
-    title: 'Custom start',
-    description: 'Choose your own start date, book and chapter.',
-    icon: 'calendar',
   },
 ];
 

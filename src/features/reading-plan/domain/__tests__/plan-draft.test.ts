@@ -24,40 +24,59 @@ describe('buildReadingPlanDraft', () => {
     expect(draft.startChapter).toBe(1);
   });
 
-  it('makes the chosen chapter today’s reading when continuing', () => {
+  it('makes the chosen chapter today’s reading by default', () => {
     const draft = buildReadingPlanDraft({
-      mode: 'continue',
+      mode: 'choose',
       bookId: 'PSA',
       chapter: 119,
-      startDate: '2020-01-01',
       today: TODAY,
     });
-    // "Continue where I am" always begins today, never back-dated.
+    // The start-date disclosure stays closed, so the plan begins today.
     expect(draft.startDate).toBe(TODAY);
     expect(draft.startBookId).toBe('PSA');
     expect(draft.startChapter).toBe(119);
   });
 
-  it('honours a custom start date', () => {
+  it('honours a back-dated start when the user opens the disclosure', () => {
     const draft = buildReadingPlanDraft({
-      mode: 'custom',
+      mode: 'choose',
+      bookId: 'MAT',
+      chapter: 5,
+      startDate: '2026-08-01',
+      today: TODAY,
+    });
+    expect(draft.startDate).toBe('2026-08-01');
+    expect(draft.startBookId).toBe('MAT');
+    expect(draft.startChapter).toBe(5);
+  });
+
+  it('honours a future start date', () => {
+    const draft = buildReadingPlanDraft({
+      mode: 'choose',
       bookId: 'MAT',
       chapter: 5,
       startDate: '2026-09-01',
       today: TODAY,
     });
     expect(draft.startDate).toBe('2026-09-01');
-    expect(draft.startBookId).toBe('MAT');
-    expect(draft.startChapter).toBe(5);
+  });
+
+  it('ignores a supplied start date when starting from Genesis', () => {
+    const draft = buildReadingPlanDraft({
+      mode: 'genesis',
+      startDate: '2020-01-01',
+      today: TODAY,
+    });
+    expect(draft.startDate).toBe(TODAY);
   });
 
   it('clamps a chapter beyond the end of the chosen book', () => {
-    const draft = buildReadingPlanDraft({ mode: 'continue', bookId: 'JUD', chapter: 40, today: TODAY });
+    const draft = buildReadingPlanDraft({ mode: 'choose', bookId: 'JUD', chapter: 40, today: TODAY });
     expect(draft.startChapter).toBe(1);
   });
 
   it('keeps one chapter per day in V1', () => {
-    expect(buildReadingPlanDraft({ mode: 'custom', today: TODAY }).chaptersPerDay).toBe(1);
+    expect(buildReadingPlanDraft({ mode: 'choose', today: TODAY }).chaptersPerDay).toBe(1);
   });
 });
 

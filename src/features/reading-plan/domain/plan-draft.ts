@@ -63,8 +63,9 @@ export interface BuildDraftOptions {
 /**
  * Builds a normalised draft for each onboarding path.
  *
- * "Continue where I am" makes the chosen chapter *today's* reading, so the plan
- * start date is today rather than back-dated.
+ * `genesis` always starts at Genesis 1 today, ignoring any supplied reference.
+ * `choose` uses the picked book and chapter, and starts today unless the user
+ * back-dated the plan through the start-date disclosure.
  */
 export function buildReadingPlanDraft(options: BuildDraftOptions): ReadingPlanDraft {
   const canonId = options.canonId ?? DEFAULT_CANON_ID;
@@ -83,7 +84,14 @@ export function buildReadingPlanDraft(options: BuildDraftOptions): ReadingPlanDr
 
   const bookId = options.bookId ?? index.firstReference.bookId;
   const chapter = clampChapter(bookId, options.chapter ?? 1, canonId);
-  const startDate = options.mode === 'custom' ? (options.startDate ?? today) : today;
 
-  return { canonId, startDate, startBookId: bookId, startChapter: chapter, chaptersPerDay: DEFAULT_CHAPTERS_PER_DAY };
+  return {
+    canonId,
+    // Defaults to today, so the chosen chapter becomes today's reading unless the
+    // user deliberately back-dates the plan.
+    startDate: options.startDate ?? today,
+    startBookId: bookId,
+    startChapter: chapter,
+    chaptersPerDay: DEFAULT_CHAPTERS_PER_DAY,
+  };
 }
