@@ -50,6 +50,22 @@ describe('TodayReadingCard', () => {
     expect(queryByTestId('mark-today-read')).toBeNull();
   });
 
+  it('shows what was actually read, not the schedule, once logged', async () => {
+    // Regression: logging Genesis 50 on a day scheduled for Genesis 24 used to leave
+    // the card announcing "Genesis 24 — Completed today", contradicting the day sheet.
+    const { getByText, queryByText } = await renderCard(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 50 }] }),
+    );
+
+    expect(getByText('Genesis 50')).toBeTruthy();
+    expect(queryByText('Genesis 24')).toBeNull();
+  });
+
+  it('still shows the schedule while the day is unread', async () => {
+    const { getByText } = await renderCard(makeDay());
+    expect(getByText('Genesis 24')).toBeTruthy();
+  });
+
   it('routes to the day detail for undo', async () => {
     const onOpenDetail = jest.fn();
     const { getByTestId } = await renderCard(makeDay({ status: 'completed' }), { onOpenDetail });
