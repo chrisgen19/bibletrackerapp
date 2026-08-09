@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,10 +28,11 @@ export default function DayDetailScreen() {
   );
 
   const handleComplete = useCallback(
-    (chapters: readonly BibleReference[]) => {
-      if (day === null) return;
-      completeReading(day.date, chapters);
-      completionHaptic();
+    (chapters: readonly BibleReference[]): boolean => {
+      if (day === null) return false;
+      const logged = completeReading(day.date, chapters);
+      if (logged) completionHaptic();
+      return logged;
     },
     [day, completeReading],
   );
@@ -55,6 +56,13 @@ export default function DayDetailScreen() {
     paddingTop: theme.spacing.xxl,
     paddingBottom: Math.max(insets.bottom, theme.spacing.xl) + theme.spacing.sm,
   };
+
+  // Without any plan there is nothing to attach a completion to. Mirror the main
+  // screen and send the user to onboarding rather than showing a sheet whose
+  // actions cannot persist — reachable via a reminder that outlived a reset.
+  if (plans.length === 0) {
+    return <Redirect href="/onboarding" />;
+  }
 
   if (day === null) {
     return (

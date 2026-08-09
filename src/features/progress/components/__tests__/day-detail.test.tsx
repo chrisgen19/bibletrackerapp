@@ -21,7 +21,7 @@ function makeDay(overrides: Partial<DayReading> = {}): DayReading {
 }
 
 async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof DayDetail>[0]> = {}) {
-  const onComplete = handlers.onComplete ?? jest.fn();
+  const onComplete = handlers.onComplete ?? jest.fn(() => true);
   const onUndo = handlers.onUndo ?? jest.fn();
   const onChangePlan = handlers.onChangePlan ?? jest.fn();
   const queries = await renderWithTheme(
@@ -137,6 +137,20 @@ describe('DayDetail — custom tab', () => {
 
     expect(onComplete).toHaveBeenCalledWith([{ bookId: 'REV', chapter: 22 }]);
     expect(Alert.alert).not.toHaveBeenCalled();
+  });
+
+  it('does not claim success when the write is rejected', async () => {
+    // Regression: with no plan to attach to, completeReading writes nothing. The
+    // sheet used to show "<chapter> is logged" and offer a continuation anyway.
+    const onComplete = jest.fn(() => false);
+    const { getByTestId, onChangePlan } = await renderDetail(makeDay(), { onComplete });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(onChangePlan).not.toHaveBeenCalled();
   });
 
   it('lets a day the plan never covered still be logged', async () => {

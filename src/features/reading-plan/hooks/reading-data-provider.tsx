@@ -52,7 +52,8 @@ interface ReadingDataValue {
   hasCompletedOnboarding: boolean;
   startPlan: (draft: ReadingPlanDraft) => void;
   changePlan: (draft: ReadingPlanDraft) => void;
-  completeReading: (date: DateKey, chapters: readonly BibleReference[]) => void;
+  /** Returns false when nothing was written, so callers never claim a phantom success. */
+  completeReading: (date: DateKey, chapters: readonly BibleReference[]) => boolean;
   undoReading: (date: DateKey) => void;
   resetProgress: () => void;
 }
@@ -119,15 +120,19 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
   );
 
   const completeReading = useCallback(
-    (date: DateKey, chapters: readonly BibleReference[]) => {
-      if (chapters.length === 0) return;
+    (date: DateKey, chapters: readonly BibleReference[]): boolean => {
+      if (chapters.length === 0) return false;
       // Completions must belong to a plan row. Normally that is the segment governing
       // the date, but a hand-logged reading can land on a day no segment covers (before
       // the plan began), so fall back to the active plan rather than dropping it.
       const plan = resolvePlanForDate(getAllReadingPlans(db), date) ?? getActiveReadingPlan(db);
-      if (plan === null) return;
+      // No plan at all means there is nowhere to attach the row. Report the failure
+      // rather than swallowing it, so the UI cannot announce a completion that the
+      // database never accepted.
+      if (plan === null) return false;
       markReadingComplete(db, { readingPlanId: plan.id, localDate: date, chapters });
       refresh();
+      return true;
     },
     [db, refresh],
   );

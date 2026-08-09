@@ -29,7 +29,7 @@ const TABS: readonly SegmentOption<Tab>[] = [
 interface DayDetailProps {
   day: DayReading;
   today: DateKey;
-  onComplete: (chapters: readonly BibleReference[]) => void;
+  onComplete: (chapters: readonly BibleReference[]) => boolean;
   onUndo: () => void;
   /** Moves the reading position so the next unread day follows on from a logged chapter. */
   onChangePlan: (draft: ReadingPlanDraft) => void;
@@ -101,7 +101,7 @@ interface PlanPanelProps {
   day: DayReading;
   isFuture: boolean;
   isCompleted: boolean;
-  onComplete: (chapters: readonly BibleReference[]) => void;
+  onComplete: (chapters: readonly BibleReference[]) => boolean;
   onUndo: () => void;
 }
 
@@ -168,7 +168,7 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo }: PlanPanel
 interface CustomPanelProps {
   day: DayReading;
   today: DateKey;
-  onComplete: (chapters: readonly BibleReference[]) => void;
+  onComplete: (chapters: readonly BibleReference[]) => boolean;
   onChangePlan: (draft: ReadingPlanDraft) => void;
   completions: CompletionLookup;
 }
@@ -196,7 +196,8 @@ function CustomPanel({ day, today, onComplete, onChangePlan, completions }: Cust
   const book = index.getBook(reference.bookId);
 
   const handleLog = useCallback(() => {
-    onComplete([reference]);
+    // A failed write must not produce a success alert or a continuation offer.
+    if (!onComplete([reference])) return;
 
     const draft = buildContinuationDraft({
       loggedChapter: reference,

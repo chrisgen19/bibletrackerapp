@@ -38,12 +38,15 @@ export default function SettingsScreen() {
           style: 'destructive',
           onPress: () => {
             resetProgress();
+            // The daily reminder would otherwise keep firing for a plan that no
+            // longer exists, and tapping it would open a day with nothing to read.
+            void reminder.setEnabled(false);
             router.replace('/');
           },
         },
       ],
     );
-  }, [resetProgress, router]);
+  }, [resetProgress, router, reminder]);
 
   const startReference =
     activePlan === null
