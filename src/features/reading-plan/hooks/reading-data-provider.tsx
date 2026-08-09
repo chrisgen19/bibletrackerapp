@@ -120,8 +120,12 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
 
   const completeReading = useCallback(
     (date: DateKey, chapters: readonly BibleReference[]) => {
-      const plan = resolvePlanForDate(getAllReadingPlans(db), date);
-      if (plan === null || chapters.length === 0) return;
+      if (chapters.length === 0) return;
+      // Completions must belong to a plan row. Normally that is the segment governing
+      // the date, but a hand-logged reading can land on a day no segment covers (before
+      // the plan began), so fall back to the active plan rather than dropping it.
+      const plan = resolvePlanForDate(getAllReadingPlans(db), date) ?? getActiveReadingPlan(db);
+      if (plan === null) return;
       markReadingComplete(db, { readingPlanId: plan.id, localDate: date, chapters });
       refresh();
     },

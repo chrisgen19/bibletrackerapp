@@ -71,7 +71,7 @@ describe('CalendarGrid', () => {
     const onSelectDay = jest.fn();
     const { getByLabelText } = await renderGrid([], onSelectDay);
 
-    fireEvent.press(getByLabelText('Today, Monday 24 August, Genesis 24, not read yet'));
+    await fireEvent.press(getByLabelText('Today, Monday 24 August, Genesis 24, not read yet'));
     expect(onSelectDay).toHaveBeenCalledWith(TODAY);
   });
 });

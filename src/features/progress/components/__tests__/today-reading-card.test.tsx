@@ -36,7 +36,7 @@ describe('TodayReadingCard', () => {
     const onMarkRead = jest.fn();
     const { getByTestId } = await renderCard(makeDay(), { onMarkRead });
 
-    fireEvent.press(getByTestId('mark-today-read'));
+    await fireEvent.press(getByTestId('mark-today-read'));
     expect(onMarkRead).toHaveBeenCalledTimes(1);
   });
 
@@ -54,7 +54,7 @@ describe('TodayReadingCard', () => {
     const onOpenDetail = jest.fn();
     const { getByTestId } = await renderCard(makeDay({ status: 'completed' }), { onOpenDetail });
 
-    fireEvent.press(getByTestId('open-today-detail'));
+    await fireEvent.press(getByTestId('open-today-detail'));
     expect(onOpenDetail).toHaveBeenCalledTimes(1);
   });
 
