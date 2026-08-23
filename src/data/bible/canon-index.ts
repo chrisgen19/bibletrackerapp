@@ -16,6 +16,8 @@ export interface CanonIndex {
   getBook(bookId: string): BibleBook | undefined;
   hasBook(bookId: string): boolean;
   isValidReference(reference: BibleReference): boolean;
+  /** Verses in the given chapter, or `null` when the reference is unknown. */
+  getVerseCount(reference: BibleReference): number | null;
   /** `null` when the reference does not exist in this canon. */
   toAbsoluteIndex(reference: BibleReference): number | null;
   /** `null` when the index falls outside the canon. */
@@ -77,6 +79,10 @@ export function createCanonIndex(canon: Canon): CanonIndex {
     getBook: (bookId) => byId.get(bookId),
     hasBook: (bookId) => byId.has(bookId),
     isValidReference,
+    getVerseCount(reference) {
+      if (!isValidReference(reference)) return null;
+      return byId.get(reference.bookId)?.verseCounts[reference.chapter - 1] ?? null;
+    },
     toAbsoluteIndex(reference) {
       if (!isValidReference(reference)) return null;
       const slot = slotById.get(reference.bookId);

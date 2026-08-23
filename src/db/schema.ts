@@ -38,10 +38,30 @@ export const readingCompletions = sqliteTable(
     localDate: text('local_date').notNull(),
     bookId: text('book_id').notNull(),
     chapter: integer('chapter').notNull(),
+    /**
+     * Inclusive verse span actually read.
+     *
+     * `0, 0` means "the whole chapter, span not recorded" — the only value rows
+     * written before verse tracking existed can have, supplied by the column
+     * default. New writes always store a real span, so the sentinel is historical.
+     *
+     * These are NOT NULL deliberately: SQLite treats NULLs as distinct in a unique
+     * index, so a nullable span would let the same reading be recorded twice.
+     */
+    fromVerse: integer('from_verse').notNull().default(0),
+    toVerse: integer('to_verse').notNull().default(0),
     completedAt: integer('completed_at').notNull(),
   },
   (table) => [
-    uniqueIndex('reading_completion_day_chapter_unique').on(table.localDate, table.bookId, table.chapter),
+    // Keyed on the span as well as the chapter, so reading 1-10 and later 11-31 are
+    // two rows while re-logging the same span stays a no-op.
+    uniqueIndex('reading_completion_day_span_unique').on(
+      table.localDate,
+      table.bookId,
+      table.chapter,
+      table.fromVerse,
+      table.toVerse,
+    ),
     index('reading_completion_local_date_idx').on(table.localDate),
   ],
 );
