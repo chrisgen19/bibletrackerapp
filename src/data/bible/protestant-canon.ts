@@ -1,4 +1,5 @@
 import type { BibleBook, Canon, TestamentId } from './canon';
+import { PROTESTANT_VERSE_COUNTS } from './protestant-verse-counts';
 
 interface BookSeed {
   readonly id: string;
@@ -88,7 +89,11 @@ function toBooks(): readonly BibleBook[] {
   const books: BibleBook[] = [];
   for (const [testament, seeds] of sections) {
     for (const seed of seeds) {
-      books.push({ ...seed, testament, order: books.length + 1 });
+      const verseCounts = PROTESTANT_VERSE_COUNTS[seed.id];
+      if (verseCounts === undefined) {
+        throw new Error(`Missing verse counts for book "${seed.id}".`);
+      }
+      books.push({ ...seed, testament, verseCounts, order: books.length + 1 });
     }
   }
   return books;

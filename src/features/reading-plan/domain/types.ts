@@ -1,4 +1,4 @@
-import type { BibleReference } from '@/data/bible/canon';
+import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import type { DateKey } from '@/utils/date-key';
 
 /**
@@ -28,6 +28,11 @@ export interface ReadingCompletion {
   readonly localDate: DateKey;
   readonly bookId: string;
   readonly chapter: number;
+  /**
+   * The verse span actually read, or `null` when the whole chapter was recorded
+   * without one — which is every row written before verse tracking existed.
+   */
+  readonly verses: VerseRange | null;
   readonly completedAt: number;
 }
 

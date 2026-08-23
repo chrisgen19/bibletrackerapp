@@ -1,6 +1,6 @@
 import { and, asc, count, eq, gte, lte } from 'drizzle-orm';
 
-import type { BibleReference } from '@/data/bible/canon';
+import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import type { ReadingDatabase } from '@/db/client';
 import { readingCompletions, type ReadingCompletionRow } from '@/db/schema';
 import type { ReadingCompletion } from '@/features/reading-plan/domain/types';
@@ -14,6 +14,8 @@ function toDomain(row: ReadingCompletionRow): ReadingCompletion {
     localDate: row.localDate,
     bookId: row.bookId,
     chapter: row.chapter,
+    // 0,0 is the "whole chapter, span not recorded" sentinel.
+    verses: row.fromVerse === 0 && row.toVerse === 0 ? null : { from: row.fromVerse, to: row.toVerse },
     completedAt: row.completedAt,
   };
 }
@@ -52,6 +54,11 @@ export interface MarkCompleteInput {
   readonly readingPlanId: string;
   readonly localDate: DateKey;
   readonly chapters: readonly BibleReference[];
+  /**
+   * A partial span, applied only when a single chapter is being recorded — you read
+   * part of one chapter, never part of several. Omit for whole-chapter reads.
+   */
+  readonly verses?: VerseRange;
   readonly completedAt?: number;
 }
 
@@ -64,6 +71,10 @@ export interface MarkCompleteInput {
 export function markReadingComplete(db: ReadingDatabase, input: MarkCompleteInput): void {
   const completedAt = input.completedAt ?? Date.now();
 
+  // A span only makes sense for a single chapter; ignore it otherwise rather than
+  // silently applying the same verses to several chapters.
+  const span = input.chapters.length === 1 ? input.verses : undefined;
+
   db.transaction((tx) => {
     for (const chapter of input.chapters) {
       tx.insert(readingCompletions)
@@ -73,6 +84,8 @@ export function markReadingComplete(db: ReadingDatabase, input: MarkCompleteInpu
           localDate: input.localDate,
           bookId: chapter.bookId,
           chapter: chapter.chapter,
+          fromVerse: span?.from ?? 0,
+          toVerse: span?.to ?? 0,
           completedAt,
         })
         .onConflictDoNothing()

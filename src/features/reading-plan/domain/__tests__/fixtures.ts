@@ -27,6 +27,7 @@ export function makeCompletion(
     localDate,
     bookId: 'GEN',
     chapter: 1,
+    verses: null,
     completedAt: 0,
     ...overrides,
   };

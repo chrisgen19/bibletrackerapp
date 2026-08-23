@@ -201,6 +201,7 @@ describe('plan segments', () => {
         localDate: '2026-03-01',
         bookId: 'EXO',
         chapter: 10,
+        verses: null,
         completedAt: 0,
       },
     ]);
