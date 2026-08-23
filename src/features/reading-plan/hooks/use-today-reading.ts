@@ -7,10 +7,10 @@ import { useReadingData } from './reading-data-provider';
 
 /** Everything the Today card needs, recomputed whenever plans or completions change. */
 export function useTodayReading(): DayReading {
-  const { plans, completionLookup, today } = useReadingData();
+  const { plans, scheduleContext, today } = useReadingData();
 
   return useMemo(
-    () => getDayReading(plans, today, completionLookup, today),
-    [plans, completionLookup, today],
+    () => getDayReading(plans, today, scheduleContext),
+    [plans, scheduleContext, today],
   );
 }

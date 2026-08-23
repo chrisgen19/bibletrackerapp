@@ -28,10 +28,10 @@ import { settingChangedHaptic } from '@/utils/haptics';
 export default function ReadingPlanScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { activePlan, today, changePlan } = useReadingData();
+  const { activePlan, today, changePlan, scheduleContext } = useReadingData();
 
   const currentToday =
-    activePlan === null ? null : calculateReadingForDate(activePlan, today);
+    activePlan === null ? null : calculateReadingForDate(activePlan, today, scheduleContext);
   const currentReference =
     currentToday?.kind === 'scheduled' && currentToday.chapters[0] !== undefined
       ? formatReference(currentToday.chapters[0])

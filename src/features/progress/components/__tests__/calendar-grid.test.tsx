@@ -1,5 +1,5 @@
 import { makeCompletions, makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
-import { createCompletionLookup, getDayReading } from '@/features/reading-plan/domain/schedule';
+import { createScheduleContext, getDayReading } from '@/features/reading-plan/domain/schedule';
 import type { DayReading } from '@/features/reading-plan/domain/types';
 import { fireEvent, renderWithTheme } from '@/test-utils/render';
 import type { DateKey } from '@/utils/date-key';
@@ -12,11 +12,12 @@ const plan = makePlan({ startDate: '2026-08-01' });
 const month = buildCalendarMonth({ year: 2026, month: 8 });
 
 function buildReadings(completedDates: readonly DateKey[]): Map<DateKey, DayReading> {
-  const completions = createCompletionLookup(makeCompletions(completedDates));
+  const rows = makeCompletions(completedDates);
+  const context = createScheduleContext([plan], rows, TODAY);
   const readings = new Map<DateKey, DayReading>();
   for (const week of month.weeks) {
     for (const cell of week) {
-      readings.set(cell.date, getDayReading([plan], cell.date, completions, TODAY));
+      readings.set(cell.date, getDayReading([plan], cell.date, context));
     }
   }
   return readings;
@@ -44,20 +45,23 @@ describe('CalendarGrid', () => {
   it('describes each day for screen readers', async () => {
     const { getByLabelText } = await renderGrid(['2026-08-10']);
 
-    expect(getByLabelText('Monday 10 August, Genesis 10, completed')).toBeTruthy();
-    expect(getByLabelText('Tuesday 11 August, Genesis 11, not read')).toBeTruthy();
+    // The day announces what was *recorded*, and an unread past day names no chapter
+    // at all: the position never moved, so nothing was scheduled and lost.
+    expect(getByLabelText('Monday 10 August, Genesis 1, completed')).toBeTruthy();
+    expect(getByLabelText('Tuesday 11 August, not read')).toBeTruthy();
   });
 
   it('announces today as pending rather than missed', async () => {
     const { getByLabelText } = await renderGrid();
 
-    expect(getByLabelText('Today, Monday 24 August, Genesis 24, not read yet')).toBeTruthy();
+    // Nothing read yet, so today is still the head of the queue.
+    expect(getByLabelText('Today, Monday 24 August, Genesis 1, not read yet')).toBeTruthy();
   });
 
   it('shows future days as scheduled, not missed', async () => {
     const { getByLabelText } = await renderGrid();
 
-    expect(getByLabelText('Tuesday 25 August, Genesis 25, scheduled')).toBeTruthy();
+    expect(getByLabelText('Tuesday 25 August, Genesis 2, scheduled')).toBeTruthy();
   });
 
   it('marks days before the plan began without penalising them', async () => {
@@ -71,7 +75,7 @@ describe('CalendarGrid', () => {
     const onSelectDay = jest.fn();
     const { getByLabelText } = await renderGrid([], onSelectDay);
 
-    await fireEvent.press(getByLabelText('Today, Monday 24 August, Genesis 24, not read yet'));
+    await fireEvent.press(getByLabelText('Today, Monday 24 August, Genesis 1, not read yet'));
     expect(onSelectDay).toHaveBeenCalledWith(TODAY);
   });
 });

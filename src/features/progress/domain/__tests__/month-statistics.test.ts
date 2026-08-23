@@ -1,5 +1,5 @@
-import { makeCompletions, makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
-import { createCompletionLookup } from '@/features/reading-plan/domain/schedule';
+import { makeCompletion, makeCompletions, makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
+import { createCompletionLookup, createScheduleContext } from '@/features/reading-plan/domain/schedule';
 import { eachDateKeyInRange } from '@/utils/date-key';
 
 import { buildCalendarMonth } from '../calendar-month';
@@ -13,9 +13,12 @@ function statsFor(options: {
   today: string;
   plans?: readonly ReturnType<typeof makePlan>[];
 }) {
+  const plans = options.plans ?? [plan];
+  const rows = makeCompletions(options.completed);
   return calculateMonthStatistics({
-    plans: options.plans ?? [plan],
-    completions: createCompletionLookup(makeCompletions(options.completed)),
+    plans,
+    completions: createCompletionLookup(rows),
+    context: createScheduleContext(plans, rows, options.today),
     monthDates: options.monthDates,
     today: options.today,
   });
@@ -30,6 +33,7 @@ describe('calculateMonthStatistics', () => {
     const stats = calculateMonthStatistics({
       plans: [],
       completions: createCompletionLookup([]),
+      context: createScheduleContext([], [], '2026-08-24'),
       monthDates: AUGUST_2026,
       today: '2026-08-24',
     });
@@ -93,6 +97,28 @@ describe('calculateMonthStatistics', () => {
   });
 
   it('stops scheduling days after the canon is finished', () => {
+    // The position follows the reader, so days are expected until the reading is
+    // actually done — not until the date arithmetic runs out of chapters.
+    const endingPlan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 20 });
+    const rows = [
+      makeCompletion('2026-08-01', { bookId: 'REV', chapter: 20 }),
+      makeCompletion('2026-08-02', { bookId: 'REV', chapter: 21 }),
+      makeCompletion('2026-08-03', { bookId: 'REV', chapter: 22 }),
+    ];
+    const stats = calculateMonthStatistics({
+      plans: [endingPlan],
+      completions: createCompletionLookup(rows),
+      context: createScheduleContext([endingPlan], rows, '2026-08-24'),
+      monthDates: AUGUST_2026,
+      today: '2026-08-24',
+    });
+    expect(stats.scheduledDays).toBe(3);
+    expect(stats.expectedDays).toBe(3);
+    expect(stats.completedDays).toBe(3);
+  });
+
+  it('keeps expecting readings while anything is still owed', () => {
+    // Three chapters left but nothing read: every elapsed day still counted.
     const endingPlan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 20 });
     const stats = statsFor({
       plans: [endingPlan],
@@ -100,9 +126,7 @@ describe('calculateMonthStatistics', () => {
       completed: [],
       today: '2026-08-24',
     });
-    // Revelation 20, 21, 22 — three scheduled days, then the plan is complete.
-    expect(stats.scheduledDays).toBe(3);
-    expect(stats.expectedDays).toBe(3);
+    expect(stats.expectedDays).toBe(24);
   });
 
   it('handles an empty month list defensively', () => {

@@ -70,12 +70,16 @@ export function TodayReadingCard({
         <Text variant="headline" style={{ marginTop: theme.spacing.sm }}>
           {day.scheduled.kind === 'canon-complete'
             ? 'You have finished the Bible'
-            : 'Your plan starts soon'}
+            : day.scheduled.kind === 'not-scheduled'
+              ? 'Nothing scheduled'
+              : 'Your plan starts soon'}
         </Text>
         <Text variant="callout" color="secondary" style={{ marginTop: theme.spacing.xs }}>
           {day.scheduled.kind === 'canon-complete'
             ? 'Every chapter from Genesis to Revelation is behind you. Start a new plan whenever you are ready.'
-            : 'Your first reading will appear on the day your plan begins.'}
+            : day.scheduled.kind === 'not-scheduled'
+              ? 'Use the Custom tab to record whatever you read.'
+              : 'Your first reading will appear on the day your plan begins.'}
         </Text>
       </Card>
     );
