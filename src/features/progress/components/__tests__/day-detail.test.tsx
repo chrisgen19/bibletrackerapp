@@ -199,6 +199,24 @@ describe('DayDetail — partial chapters', () => {
     expect(getByTestId('mark-day-read')).toBeTruthy();
   });
 
+  it('names the finished chapter once, not as a span of itself', async () => {
+    // Reading 1-10 then 11-end on the same date leaves two rows for one chapter.
+    // The confirmation used to read "Genesis 21-21 completed".
+    const { getByText, queryByText } = await renderDetail(
+      makeDay({
+        status: 'completed',
+        completedChapters: [
+          { bookId: 'GEN', chapter: 21 },
+          { bookId: 'GEN', chapter: 21 },
+        ],
+      }),
+      { progress: progressFor([{ from: 1, to: 34 }]) },
+    );
+
+    expect(getByText('Genesis 21 completed')).toBeTruthy();
+    expect(queryByText('Genesis 21–21 completed')).toBeNull();
+  });
+
   it('does not offer verse tracking on a future day', async () => {
     const { queryByTestId } = await renderDetail(
       makeDay({ date: '2026-09-01', status: 'upcoming' }),

@@ -9,7 +9,7 @@ import {
   type DateKey,
 } from '@/utils/date-key';
 
-import { getChapterSpan } from './reference';
+import { distinctReferences, getChapterSpan } from './reference';
 import type { DayReading, ReadingCompletion, ReadingPlan, ReadingStatus, ScheduledReading } from './types';
 
 /**
@@ -150,7 +150,12 @@ export function getDayReading(
     date,
     status: resolveTimelineStatus(plans, plan, date, completions, today),
     scheduled,
-    completedChapters: rows.map((row) => ({ bookId: row.bookId, chapter: row.chapter })),
+    // Deduplicated at source: a chapter read in two sittings produces two rows, but
+    // "chapters completed on this day" is a set. Leaving duplicates here made three
+    // separate surfaces render "Genesis 21–21" and inflate counts.
+    completedChapters: distinctReferences(
+      rows.map((row) => ({ bookId: row.bookId, chapter: row.chapter })),
+    ),
     plan,
   };
 }

@@ -143,7 +143,11 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
             : 'Your reading plan hadn’t started yet on this day.'}
         </Text>
         {isCompleted ? (
-          <CompletedBlock day={day} onUndo={onUndo} reducedMotion={reducedMotion} />
+          <CompletedBlock
+            chapters={distinctReferences(day.completedChapters)}
+            onUndo={onUndo}
+            reducedMotion={reducedMotion}
+          />
         ) : (
           <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.md }}>
             You can still record what you read using the Custom tab.
@@ -211,7 +215,7 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
 
       <View style={{ marginTop: theme.spacing.xl }}>
         {showCompleted ? (
-          <CompletedBlock day={day} onUndo={onUndo} reducedMotion={reducedMotion} />
+          <CompletedBlock chapters={chapters} onUndo={onUndo} reducedMotion={reducedMotion} />
         ) : isFuture ? (
           <View
             style={{
@@ -423,11 +427,12 @@ function ReferenceBlock({ label, chapters }: { label: string; chapters: readonly
 }
 
 function CompletedBlock({
-  day,
+  chapters,
   onUndo,
   reducedMotion,
 }: {
-  day: DayReading;
+  /** Already deduplicated — two spans of one chapter must not read "Genesis 21–21". */
+  chapters: readonly BibleReference[];
   onUndo: () => void;
   reducedMotion: boolean;
 }) {
@@ -438,9 +443,7 @@ function CompletedBlock({
       <View style={styles.completedRow}>
         <Icon name="checkmark" size={15} color={theme.colors.accent} />
         <Text variant="headline" color="accent" style={{ marginLeft: theme.spacing.sm }}>
-          {day.completedChapters.length > 0
-            ? `${formatReferenceSpan(day.completedChapters)} completed`
-            : 'Completed'}
+          {chapters.length > 0 ? `${formatReferenceSpan(chapters)} completed` : 'Completed'}
         </Text>
       </View>
       <Button

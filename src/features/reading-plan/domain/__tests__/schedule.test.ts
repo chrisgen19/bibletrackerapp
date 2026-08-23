@@ -9,7 +9,7 @@ import {
   isScheduledDay,
   resolvePlanForDate,
 } from '../schedule';
-import { makeCompletions, makePlan } from './fixtures';
+import { makeCompletion, makeCompletions, makePlan } from './fixtures';
 
 const NO_COMPLETIONS = createCompletionLookup([]);
 
@@ -222,6 +222,32 @@ describe('isScheduledDay', () => {
 
   it('is false once the canon has been finished', () => {
     expect(isScheduledDay([plan], '2029-11-02')).toBe(false);
+  });
+});
+
+describe('getDayReading completedChapters', () => {
+  const plan = makePlan({ startDate: '2026-08-01' });
+
+  it('reports a chapter read in two sittings once', () => {
+    // Two rows, one chapter. Duplicates here leaked into three separate surfaces.
+    const completions = createCompletionLookup([
+      makeCompletion('2026-08-05', { bookId: 'GEN', chapter: 5, verses: { from: 1, to: 10 } }),
+      makeCompletion('2026-08-05', { bookId: 'GEN', chapter: 5, verses: { from: 11, to: 32 } }),
+    ]);
+    const day = getDayReading([plan], '2026-08-05', completions, '2026-08-24');
+    expect(day.completedChapters).toEqual([{ bookId: 'GEN', chapter: 5 }]);
+  });
+
+  it('keeps genuinely different chapters', () => {
+    const completions = createCompletionLookup([
+      makeCompletion('2026-08-05', { bookId: 'GEN', chapter: 5 }),
+      makeCompletion('2026-08-05', { bookId: 'EXO', chapter: 1 }),
+    ]);
+    const day = getDayReading([plan], '2026-08-05', completions, '2026-08-24');
+    expect(day.completedChapters).toEqual([
+      { bookId: 'GEN', chapter: 5 },
+      { bookId: 'EXO', chapter: 1 },
+    ]);
   });
 });
 
