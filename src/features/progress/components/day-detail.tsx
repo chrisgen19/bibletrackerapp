@@ -345,8 +345,6 @@ function CustomPanel({
   const fromVerse = progress?.remaining[0]?.from ?? 1;
   const lastVerse = progress?.verseCount ?? 1;
   const endVerse = toVerse ?? lastVerse;
-  // Memoised because it feeds the log callback's dependency list; a fresh object each
-  // render would defeat the memoisation entirely.
   const span: VerseRange = { from: fromVerse, to: endVerse };
   const finishesChapter = endVerse >= lastVerse;
   const resuming = progress?.isPartial === true;
@@ -357,6 +355,11 @@ function CustomPanel({
   const handleLog = () => {
     // A failed write must not produce a success alert or a continuation offer.
     if (!onComplete([reference], canTrackVerses ? span : undefined)) return;
+
+    // Continuation starts at the chapter *after* this one, so offering it while
+    // verses remain unread would advance the plan straight past them. Only a
+    // finished chapter may move the position; a partial read stays in the backlog.
+    if (canTrackVerses && !finishesChapter) return;
 
     const draft = buildContinuationDraft({
       loggedChapter: reference,

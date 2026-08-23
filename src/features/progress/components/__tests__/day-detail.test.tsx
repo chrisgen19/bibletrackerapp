@@ -280,6 +280,46 @@ describe('DayDetail — custom tab', () => {
     });
   });
 
+  it('does not offer to move the plan past verses that are still unread', async () => {
+    // Regression: the continuation draft starts at the chapter *after* the one
+    // logged. Offering it after a partial read would advance the plan to Genesis 22
+    // while 11-34 of Genesis 21 had never been read - re-creating the very loss
+    // this feature exists to prevent.
+    const { getByTestId, getByLabelText, onComplete, onChangePlan } = await renderDetail(
+      makeDay(),
+      { getProgressFor: () => progressFor([]) },
+    );
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 1, to: 10 });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(onChangePlan).not.toHaveBeenCalled();
+  });
+
+  it('offers to move the plan once a resumed chapter is actually finished', async () => {
+    // The mirror of the case above: 1-10 were read earlier, the user now reads
+    // 11-34, so the chapter is genuinely done and continuing is correct.
+    const { getByTestId, getByLabelText, onComplete, onChangePlan } = await renderDetail(
+      makeDay(),
+      { getProgressFor: () => progressFor([{ from: 1, to: 10 }]) },
+    );
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 34, finishes the chapter'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 11, to: 34 });
+    pressAlertButton(1);
+    expect(onChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({ startBookId: 'GEN', startChapter: 22 }),
+    );
+  });
+
   it('does not offer to continue past the end of the canon', async () => {
     // CustomPanel seeds its state from the day's recorded chapter, so setting
     // completedChapters to Revelation 22 is what puts the picker at the canon end.
