@@ -34,6 +34,8 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       onChangePlan={onChangePlan}
       completions={handlers.completions ?? createCompletionLookup([])}
       progress={handlers.progress ?? null}
+      getProgressFor={handlers.getProgressFor ?? (() => null)}
+      focusChapter={handlers.focusChapter ?? null}
     />,
   );
   return { onComplete, onUndo, onChangePlan, ...queries };
@@ -247,7 +249,7 @@ describe('DayDetail — custom tab', () => {
 
     // Defaults to the scheduled chapter until the user picks something else.
     // No span: verse tracking is off when the sheet has no chapter progress.
-    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }]);
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], undefined);
   });
 
   it('asks whether to move the plan, and does nothing to it when declined', async () => {
@@ -291,7 +293,7 @@ describe('DayDetail — custom tab', () => {
     await fireEvent.press(getByTestId('day-tab-custom'));
     await fireEvent.press(getByTestId('log-custom-reading'));
 
-    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'REV', chapter: 22 }]);
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'REV', chapter: 22 }], undefined);
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 

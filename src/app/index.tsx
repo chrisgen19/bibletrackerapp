@@ -9,6 +9,7 @@ import { getCanonIndex } from '@/data/bible/canon-index';
 import { CalendarSurface } from '@/features/progress/components/calendar-surface';
 import { StatRow } from '@/features/progress/components/stat-row';
 import { TodayReadingCard } from '@/features/progress/components/today-reading-card';
+import { UnfinishedCard } from '@/features/progress/components/unfinished-card';
 import {
   addMonthsToMonthKey,
   monthKeyFromDateKey,
@@ -17,6 +18,7 @@ import {
 } from '@/features/progress/domain/calendar-month';
 import { useMonthWindow } from '@/features/progress/hooks/use-month-window';
 import { useStreaks } from '@/features/progress/hooks/use-streaks';
+import { useUnfinishedChapters } from '@/features/progress/hooks/use-unfinished-chapters';
 import { countChaptersRead, getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { useTodayReading } from '@/features/reading-plan/hooks/use-today-reading';
@@ -34,6 +36,7 @@ export default function ProgressScreen() {
   const monthWindow = useMonthWindow(monthKey);
   const todayReading = useTodayReading();
   const streaks = useStreaks();
+  const unfinished = useUnfinishedChapters();
 
   const currentMonthKey = useMemo(() => monthKeyFromDateKey(today), [today]);
 
@@ -62,6 +65,25 @@ export default function ProgressScreen() {
       router.push(`/day/${date}`);
     },
     [router],
+  );
+
+  /**
+   * Finishing an unfinished chapter records against *today*, not the day it was
+   * started — you are reading it now. The day sheet opens on Custom with the chapter
+   * preselected and resumes at the first unread verse.
+   */
+  const finishChapter = useCallback(
+    (progress: { reference: { bookId: string; chapter: number } }) => {
+      router.push({
+        pathname: '/day/[date]',
+        params: {
+          date: today,
+          book: progress.reference.bookId,
+          chapter: String(progress.reference.chapter),
+        },
+      });
+    },
+    [router, today],
   );
 
   const markTodayRead = useCallback(() => {
@@ -116,6 +138,12 @@ export default function ProgressScreen() {
             progress={todayProgress}
           />
         </View>
+
+        {unfinished.length > 0 ? (
+          <View style={{ marginTop: theme.spacing.xxl }}>
+            <UnfinishedCard chapters={unfinished} onOpen={finishChapter} />
+          </View>
+        ) : null}
 
         <View style={{ marginTop: theme.spacing.md }}>
           <StatRow
