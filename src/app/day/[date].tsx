@@ -19,7 +19,11 @@ export default function DayDetailScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { date } = useLocalSearchParams<{ date: string }>();
+  const { date, book, chapter } = useLocalSearchParams<{
+    date: string;
+    book?: string;
+    chapter?: string;
+  }>();
   const { plans, completions, completionLookup, today, completeReading, undoReading, changePlan } =
     useReadingData();
 
@@ -41,6 +45,26 @@ export default function DayDetailScreen() {
     const canonId = day.plan?.canonId ?? 'protestant';
     return getChapterProgress(completions, chapter, getCanonIndex(canonId));
   }, [day, completions]);
+
+  /** Progress for any chapter, so the Custom tab can resume an unfinished one. */
+  const canonId = day?.plan?.canonId ?? 'protestant';
+  const getProgressFor = useCallback(
+    (reference: BibleReference) => getChapterProgress(completions, reference, getCanonIndex(canonId)),
+    [completions, canonId],
+  );
+
+  /**
+   * Arriving from the unfinished list: open Custom with that chapter selected, so the
+   * remaining verses are recorded against the day being viewed rather than back-dated
+   * to whenever the chapter was started.
+   */
+  const focusChapter = useMemo(() => {
+    if (book === undefined || chapter === undefined) return null;
+    const parsed = Number(chapter);
+    if (!Number.isInteger(parsed)) return null;
+    const reference = { bookId: book, chapter: parsed };
+    return getCanonIndex(canonId).isValidReference(reference) ? reference : null;
+  }, [book, chapter, canonId]);
 
   const handleComplete = useCallback(
     (chapters: readonly BibleReference[], verses?: VerseRange): boolean => {
@@ -103,6 +127,8 @@ export default function DayDetailScreen() {
         onChangePlan={handleChangePlan}
         completions={completionLookup}
         progress={progress}
+        getProgressFor={getProgressFor}
+        focusChapter={focusChapter}
       />
     </View>
   );

@@ -34,6 +34,8 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       onChangePlan={onChangePlan}
       completions={handlers.completions ?? createCompletionLookup([])}
       progress={handlers.progress ?? null}
+      getProgressFor={handlers.getProgressFor ?? (() => null)}
+      focusChapter={handlers.focusChapter ?? null}
     />,
   );
   return { onComplete, onUndo, onChangePlan, ...queries };
@@ -247,7 +249,7 @@ describe('DayDetail — custom tab', () => {
 
     // Defaults to the scheduled chapter until the user picks something else.
     // No span: verse tracking is off when the sheet has no chapter progress.
-    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }]);
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], undefined);
   });
 
   it('asks whether to move the plan, and does nothing to it when declined', async () => {
@@ -278,6 +280,92 @@ describe('DayDetail — custom tab', () => {
     });
   });
 
+  it('clears the verse selection after logging, as the plan tab does', async () => {
+    const { getByTestId, getByLabelText, queryByText } = await renderDetail(makeDay(), {
+      getProgressFor: () => progressFor([]),
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    expect(queryByText('Log 1–10 as Read')).not.toBeNull();
+
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    // A stale selection is how the reversed span below becomes reachable.
+    expect(queryByText('Log 1–10 as Read')).toBeNull();
+    expect(queryByText('Log as Read')).not.toBeNull();
+  });
+
+  it('never writes a reversed span after progress advances past the stale selection', async () => {
+    // The sheet stays open after logging, so progress refreshes underneath it:
+    // fromVerse moves to 11 while a stale toVerse of 10 remains, giving 11-10.
+    // normaliseRanges swaps that to 10-11 and marks verse 11 read unread.
+    let read: { from: number; to: number }[] = [];
+    const onComplete = jest.fn((_c: unknown, verses?: { from: number; to: number }) => {
+      if (verses !== undefined) read = [...read, verses];
+      return true;
+    });
+    const { getByTestId, getByLabelText, queryByText } = await renderDetail(makeDay(), {
+      onComplete,
+      getProgressFor: () => progressFor(read),
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    // Re-opening the picker re-renders against the refreshed progress.
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    expect(queryByText('Log 11–10 as Read')).toBeNull();
+
+    await fireEvent.press(getByTestId('log-custom-reading'));
+    for (const span of onComplete.mock.calls.map((call) => call[1])) {
+      if (span !== undefined) expect(span.to).toBeGreaterThanOrEqual(span.from);
+    }
+  });
+
+  it('does not offer to move the plan past verses that are still unread', async () => {
+    // Regression: the continuation draft starts at the chapter *after* the one
+    // logged. Offering it after a partial read would advance the plan to Genesis 22
+    // while 11-34 of Genesis 21 had never been read - re-creating the very loss
+    // this feature exists to prevent.
+    const { getByTestId, getByLabelText, onComplete, onChangePlan } = await renderDetail(
+      makeDay(),
+      { getProgressFor: () => progressFor([]) },
+    );
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 1, to: 10 });
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(onChangePlan).not.toHaveBeenCalled();
+  });
+
+  it('offers to move the plan once a resumed chapter is actually finished', async () => {
+    // The mirror of the case above: 1-10 were read earlier, the user now reads
+    // 11-34, so the chapter is genuinely done and continuing is correct.
+    const { getByTestId, getByLabelText, onComplete, onChangePlan } = await renderDetail(
+      makeDay(),
+      { getProgressFor: () => progressFor([{ from: 1, to: 10 }]) },
+    );
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 34, finishes the chapter'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 11, to: 34 });
+    pressAlertButton(1);
+    expect(onChangePlan).toHaveBeenCalledWith(
+      expect.objectContaining({ startBookId: 'GEN', startChapter: 22 }),
+    );
+  });
+
   it('does not offer to continue past the end of the canon', async () => {
     // CustomPanel seeds its state from the day's recorded chapter, so setting
     // completedChapters to Revelation 22 is what puts the picker at the canon end.
@@ -291,7 +379,7 @@ describe('DayDetail — custom tab', () => {
     await fireEvent.press(getByTestId('day-tab-custom'));
     await fireEvent.press(getByTestId('log-custom-reading'));
 
-    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'REV', chapter: 22 }]);
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'REV', chapter: 22 }], undefined);
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 

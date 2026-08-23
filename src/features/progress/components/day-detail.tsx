@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 import { Alert, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 
@@ -48,6 +48,10 @@ interface DayDetailProps {
    * when the day schedules no single chapter.
    */
   progress: ChapterProgress | null;
+  /** Progress for any chapter, so the Custom tab can resume an unfinished one. */
+  getProgressFor: (reference: BibleReference) => ChapterProgress | null;
+  /** Opens straight onto the Custom tab with this chapter selected. */
+  focusChapter?: BibleReference | null;
 }
 
 export function DayDetail({
@@ -58,9 +62,12 @@ export function DayDetail({
   onChangePlan,
   completions,
   progress,
+  getProgressFor,
+  focusChapter = null,
 }: DayDetailProps) {
   const theme = useTheme();
-  const [tab, setTab] = useState<Tab>('plan');
+  // Arriving from the unfinished list lands directly on Custom with that chapter.
+  const [tab, setTab] = useState<Tab>(focusChapter === null ? 'plan' : 'custom');
 
   const isFuture = compareDateKeys(day.date, today) > 0;
   const isCompleted = day.status === 'completed';
@@ -97,6 +104,8 @@ export function DayDetail({
           onComplete={onComplete}
           onChangePlan={onChangePlan}
           completions={completions}
+          getProgressFor={getProgressFor}
+          focusChapter={focusChapter}
         />
       )}
     </View>
@@ -171,7 +180,12 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
 
   const fromVerse = progress?.remaining[0]?.from ?? 1;
   const lastVerse = progress?.verseCount ?? 1;
-  const endVerse = toVerse ?? lastVerse;
+  // A selection below `fromVerse` is stale: progress advanced past it while the sheet
+  // stayed open. Treat it as unset rather than building a reversed span — normalise
+  // would swap 11–10 into 10–11 and mark a verse read that never was. The setters
+  // that clear `toVerse` keep the label honest; this keeps the *data* safe even if a
+  // future path forgets one.
+  const endVerse = toVerse !== null && toVerse >= fromVerse ? toVerse : lastVerse;
   const span: VerseRange = { from: fromVerse, to: endVerse };
   const finishesChapter = endVerse >= lastVerse;
 
@@ -288,9 +302,11 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
 interface CustomPanelProps {
   day: DayReading;
   today: DateKey;
-  onComplete: (chapters: readonly BibleReference[]) => boolean;
+  onComplete: (chapters: readonly BibleReference[], verses?: VerseRange) => boolean;
   onChangePlan: (draft: ReadingPlanDraft) => void;
   completions: CompletionLookup;
+  getProgressFor: (reference: BibleReference) => ChapterProgress | null;
+  focusChapter: BibleReference | null;
 }
 
 /**
@@ -300,24 +316,66 @@ interface CustomPanelProps {
  * continues on from there — the schedule and the log stay independent unless the
  * user explicitly links them.
  */
-function CustomPanel({ day, today, onComplete, onChangePlan, completions }: CustomPanelProps) {
+function CustomPanel({
+  day,
+  today,
+  onComplete,
+  onChangePlan,
+  completions,
+  getProgressFor,
+  focusChapter,
+}: CustomPanelProps) {
   const theme = useTheme();
   const canonId = day.plan?.canonId ?? DEFAULT_CANON_ID;
   const index = getCanonIndex(canonId);
 
   const [reference, setReference] = useState<BibleReference>(
-    () => day.completedChapters[0] ?? (day.scheduled.kind === 'scheduled'
-      ? day.scheduled.chapters[0] ?? index.firstReference
-      : index.firstReference),
+    () =>
+      focusChapter ??
+      day.completedChapters[0] ??
+      (day.scheduled.kind === 'scheduled'
+        ? day.scheduled.chapters[0] ?? index.firstReference
+        : index.firstReference),
   );
   const [bookPickerOpen, setBookPickerOpen] = useState(false);
   const [chapterPickerOpen, setChapterPickerOpen] = useState(false);
+  const [versePickerOpen, setVersePickerOpen] = useState(false);
+  const [toVerse, setToVerse] = useState<number | null>(null);
 
   const book = index.getBook(reference.bookId);
 
-  const handleLog = useCallback(() => {
+  // Progress on whichever chapter is selected, so resuming an unfinished one starts
+  // at the right verse instead of re-recording what has already been read.
+  const progress = getProgressFor(reference);
+  const fromVerse = progress?.remaining[0]?.from ?? 1;
+  const lastVerse = progress?.verseCount ?? 1;
+  // A selection below `fromVerse` is stale: progress advanced past it while the sheet
+  // stayed open. Treat it as unset rather than building a reversed span — normalise
+  // would swap 11–10 into 10–11 and mark a verse read that never was. The setters
+  // that clear `toVerse` keep the label honest; this keeps the *data* safe even if a
+  // future path forgets one.
+  const endVerse = toVerse !== null && toVerse >= fromVerse ? toVerse : lastVerse;
+  const span: VerseRange = { from: fromVerse, to: endVerse };
+  const finishesChapter = endVerse >= lastVerse;
+  const resuming = progress?.isPartial === true;
+  // Without verse counts there is no span to record. Sending one anyway would write
+  // `1-1` and claim a whole chapter had been read from a single verse.
+  const canTrackVerses = progress !== null;
+
+  const handleLog = () => {
     // A failed write must not produce a success alert or a continuation offer.
-    if (!onComplete([reference])) return;
+    if (!onComplete([reference], canTrackVerses ? span : undefined)) return;
+
+    // The sheet stays open, so progress refreshes underneath it and `fromVerse`
+    // advances past a selection that is now stale. Keeping it would render — and
+    // then write — a reversed span such as 11–10, which normalises to 10–11 and
+    // marks a verse read that never was. Must precede the early return below.
+    setToVerse(null);
+
+    // Continuation starts at the chapter *after* this one, so offering it while
+    // verses remain unread would advance the plan straight past them. Only a
+    // finished chapter may move the position; a partial read stays in the backlog.
+    if (canTrackVerses && !finishesChapter) return;
 
     const draft = buildContinuationDraft({
       loggedChapter: reference,
@@ -340,7 +398,7 @@ function CustomPanel({ day, today, onComplete, onChangePlan, completions }: Cust
         { text: 'Continue from here', onPress: () => onChangePlan(draft) },
       ],
     );
-  }, [reference, day.date, day.plan, today, onComplete, onChangePlan, index, completions]);
+  };
 
   return (
     <View>
@@ -368,13 +426,41 @@ function CustomPanel({ day, today, onComplete, onChangePlan, completions }: Cust
           label="Chapter"
           value={String(reference.chapter)}
           onPress={() => setChapterPickerOpen(true)}
-          last
+          last={!canTrackVerses}
           testID="custom-field-chapter"
         />
+        {canTrackVerses ? (
+          <FieldRow
+            label="Read to verse"
+            value={finishesChapter ? `${lastVerse} — the end` : String(endVerse)}
+            onPress={() => setVersePickerOpen(true)}
+            last
+            testID="custom-field-to-verse"
+          />
+        ) : null}
       </View>
 
+      {resuming ? (
+        <View
+          style={{
+            marginTop: theme.spacing.md,
+            padding: theme.spacing.lg,
+            borderRadius: theme.radius.lg,
+            backgroundColor: theme.colors.accentSoft,
+          }}
+        >
+          <Text variant="footnote" color="accent">
+            {`Already read ${formatVerseRanges(progress?.read ?? [])} · picking up at ${fromVerse}`}
+          </Text>
+        </View>
+      ) : null}
+
       <Button
-        label="Log as Read"
+        label={
+          !canTrackVerses || (finishesChapter && fromVerse === 1)
+            ? 'Log as Read'
+            : `Log ${formatVerseRange(span)} as Read`
+        }
         onPress={handleLog}
         accessibilityHint={`Records ${formatReference(reference, index)} for this day`}
         style={{ marginTop: theme.spacing.xl }}
@@ -386,12 +472,13 @@ function CustomPanel({ day, today, onComplete, onChangePlan, completions }: Cust
         canonId={canonId}
         selectedBookId={reference.bookId}
         onClose={() => setBookPickerOpen(false)}
-        onSelect={(selected) =>
+        onSelect={(selected) => {
+          setToVerse(null);
           setReference((current) => ({
             bookId: selected.id,
             chapter: Math.min(current.chapter, selected.chapterCount),
-          }))
-        }
+          }));
+        }}
       />
       <ChapterPicker
         visible={chapterPickerOpen}
@@ -399,8 +486,22 @@ function CustomPanel({ day, today, onComplete, onChangePlan, completions }: Cust
         bookId={reference.bookId}
         selectedChapter={reference.chapter}
         onClose={() => setChapterPickerOpen(false)}
-        onSelect={(chapter) => setReference((current) => ({ ...current, chapter }))}
+        onSelect={(chapter) => {
+          setToVerse(null);
+          setReference((current) => ({ ...current, chapter }));
+        }}
       />
+      {progress !== null ? (
+        <VersePicker
+          visible={versePickerOpen}
+          chapterLabel={formatReference(reference, index)}
+          fromVerse={fromVerse}
+          verseCount={progress.verseCount}
+          selectedTo={endVerse}
+          onSelect={setToVerse}
+          onClose={() => setVersePickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
