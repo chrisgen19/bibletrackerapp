@@ -1,5 +1,5 @@
 import { makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
-import { createCompletionLookup, getDayReading } from '@/features/reading-plan/domain/schedule';
+import { createCompletionLookup, createScheduleContext, getDayReading } from '@/features/reading-plan/domain/schedule';
 import type { DayReading } from '@/features/reading-plan/domain/types';
 import { fireEvent, renderWithTheme } from '@/test-utils/render';
 import type { DateKey } from '@/utils/date-key';
@@ -17,10 +17,11 @@ const WIDTH = 390;
 function buildProgress(key: MonthKey): MonthProgress {
   const calendar = buildCalendarMonth(key);
   const completions = createCompletionLookup([]);
+  const context = createScheduleContext([PLAN], [], TODAY);
   const readings = new Map<DateKey, DayReading>();
   for (const week of calendar.weeks) {
     for (const cell of week) {
-      readings.set(cell.date, getDayReading([PLAN], cell.date, completions, TODAY));
+      readings.set(cell.date, getDayReading([PLAN], cell.date, context));
     }
   }
   return {
@@ -29,6 +30,7 @@ function buildProgress(key: MonthKey): MonthProgress {
     statistics: calculateMonthStatistics({
       plans: [PLAN],
       completions,
+      context,
       monthDates: calendar.monthDates,
       today: TODAY,
     }),

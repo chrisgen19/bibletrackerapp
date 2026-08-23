@@ -415,3 +415,20 @@ describe('DayDetail — custom tab', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('DayDetail — a day that passed unread', () => {
+  it('says the position is unchanged rather than claiming the plan had not started', () => {
+    // Regression: the new `not-scheduled` kind fell through to the before-plan copy,
+    // telling the reader their plan had not begun on a day well inside it.
+    const day = makeDay({
+      date: '2026-08-05',
+      status: 'missed',
+      scheduled: { kind: 'not-scheduled' },
+      completedChapters: [],
+    });
+    return renderDetail(day, { today: TODAY }).then(({ getByText, queryByText }) => {
+      expect(getByText(/Your place in the plan is unchanged/)).toBeTruthy();
+      expect(queryByText(/hadn’t started yet/)).toBeNull();
+    });
+  });
+});

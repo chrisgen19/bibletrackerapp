@@ -40,6 +40,15 @@ export interface ReadingCompletion {
 export type ScheduledReading =
   | { readonly kind: 'before-plan' }
   | { readonly kind: 'canon-complete' }
+  /**
+   * A past day that went unread.
+   *
+   * The reading position follows the reader, so a day that passes does not consume a
+   * chapter — there is nothing this day was "supposed" to be. Naming one would be a
+   * fiction, and it was the fiction that made a missed day report a chapter the
+   * reader had not reached.
+   */
+  | { readonly kind: 'not-scheduled' }
   | { readonly kind: 'scheduled'; readonly chapters: readonly BibleReference[] };
 
 /**

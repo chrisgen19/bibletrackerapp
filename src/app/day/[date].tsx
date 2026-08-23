@@ -24,14 +24,14 @@ export default function DayDetailScreen() {
     book?: string;
     chapter?: string;
   }>();
-  const { plans, completions, completionLookup, today, completeReading, undoReading, changePlan } =
+  const { plans, completions, completionLookup, scheduleContext, today, completeReading, undoReading, changePlan } =
     useReadingData();
 
   const isValid = typeof date === 'string' && isValidDateKey(date);
 
   const day = useMemo<DayReading | null>(
-    () => (isValid ? getDayReading(plans, date, completionLookup, today) : null),
-    [isValid, date, plans, completionLookup, today],
+    () => (isValid ? getDayReading(plans, date, scheduleContext) : null),
+    [isValid, date, plans, scheduleContext],
   );
 
   /**

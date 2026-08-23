@@ -1,4 +1,5 @@
 
+import type { ScheduleContext } from '@/features/reading-plan/domain/schedule';
 import {
   getEarliestPlanStart,
   isScheduledDay,
@@ -26,6 +27,8 @@ const MAX_TIMELINE_DAYS = 365 * 200;
 export interface StreakInput {
   readonly plans: readonly ReadingPlan[];
   readonly completions: CompletionLookup;
+  /** Supplies the reading position, so a finished canon stops expecting readings. */
+  readonly context: ScheduleContext;
   readonly today?: DateKey;
 }
 
@@ -39,7 +42,7 @@ export interface StreakInput {
  * - Days that are not scheduled (before the plan began, or after the canon was
  *   finished) are neutral: they neither extend nor break a run.
  */
-export function calculateStreaks({ plans, completions, today = getTodayDateKey() }: StreakInput): StreakSummary {
+export function calculateStreaks({ plans, completions, context, today = getTodayDateKey() }: StreakInput): StreakSummary {
   const start = getEarliestPlanStart(plans);
   if (start === null) return EMPTY_STREAKS;
   if (compareDateKeys(start, today) > 0) return EMPTY_STREAKS;
@@ -51,7 +54,7 @@ export function calculateStreaks({ plans, completions, today = getTodayDateKey()
   let run = 0;
 
   for (const date of eachDateKeyInRange(start, today)) {
-    if (!isScheduledDay(plans, date)) continue;
+    if (!isScheduledDay(plans, date, context)) continue;
 
     if (completions.has(date)) {
       run += 1;

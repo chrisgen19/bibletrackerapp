@@ -1,21 +1,28 @@
 import { makeCompletions, makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
-import { createCompletionLookup } from '@/features/reading-plan/domain/schedule';
+import { createCompletionLookup, createScheduleContext } from '@/features/reading-plan/domain/schedule';
 
 import { calculateStreaks, describeStreak } from '../streak';
 
 const plan = makePlan({ startDate: '2026-08-01' });
 
 function streaks(completedDates: readonly string[], today: string) {
+  const rows = makeCompletions(completedDates);
   return calculateStreaks({
     plans: [plan],
-    completions: createCompletionLookup(makeCompletions(completedDates)),
+    completions: createCompletionLookup(rows),
+    context: createScheduleContext([plan], rows, today),
     today,
   });
 }
 
 describe('calculateStreaks', () => {
   it('returns zero when there is no plan', () => {
-    expect(calculateStreaks({ plans: [], completions: createCompletionLookup([]), today: '2026-08-24' })).toEqual({
+    expect(calculateStreaks({
+      plans: [],
+      completions: createCompletionLookup([]),
+      context: createScheduleContext([], [], '2026-08-24'),
+      today: '2026-08-24',
+    })).toEqual({
       current: 0,
       longest: 0,
     });
@@ -86,9 +93,11 @@ describe('calculateStreaks', () => {
 
   it('counts a streak that spans a leap day', () => {
     const leapPlan = makePlan({ startDate: '2028-02-27' });
+    const rows = makeCompletions(['2028-02-28', '2028-02-29', '2028-03-01']);
     const result = calculateStreaks({
       plans: [leapPlan],
-      completions: createCompletionLookup(makeCompletions(['2028-02-28', '2028-02-29', '2028-03-01'])),
+      completions: createCompletionLookup(rows),
+      context: createScheduleContext([leapPlan], rows, '2028-03-01'),
       today: '2028-03-01',
     });
     expect(result).toEqual({ current: 3, longest: 3 });
@@ -108,11 +117,11 @@ describe('calculateStreaks', () => {
       startChapter: 1,
       endDate: null,
     });
+    const rows = makeCompletions(['2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05']);
     const result = calculateStreaks({
       plans: [firstSegment, secondSegment],
-      completions: createCompletionLookup(
-        makeCompletions(['2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05']),
-      ),
+      completions: createCompletionLookup(rows),
+      context: createScheduleContext([firstSegment, secondSegment], rows, '2026-08-05'),
       today: '2026-08-05',
     });
     expect(result).toEqual({ current: 4, longest: 4 });

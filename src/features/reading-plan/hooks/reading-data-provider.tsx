@@ -26,8 +26,10 @@ import {
 } from '@/features/reading-plan/data/reading-plan-repository';
 import {
   createCompletionLookup,
+  createScheduleContext,
   resolvePlanForDate,
   type CompletionLookup,
+  type ScheduleContext,
 } from '@/features/reading-plan/domain/schedule';
 import type {
   ReadingCompletion,
@@ -43,6 +45,11 @@ interface ReadingDataValue {
   activePlan: ReadingPlan | null;
   completions: readonly ReadingCompletion[];
   completionLookup: CompletionLookup;
+  /**
+   * The derived reading position and per-date lookup, built once per snapshot.
+   * Readings depend on what has been read, so every screen must share one context.
+   */
+  scheduleContext: ScheduleContext;
   /** Recomputed when the app returns to the foreground, so the app never shows a stale "today". */
   today: DateKey;
   /**
@@ -165,6 +172,7 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
       activePlan: snapshot.activePlan,
       completions: snapshot.completions,
       completionLookup: createCompletionLookup(snapshot.completions),
+      scheduleContext: createScheduleContext(snapshot.plans, snapshot.completions, today),
       today,
       hasCompletedOnboarding: snapshot.activePlan !== null,
       startPlan,

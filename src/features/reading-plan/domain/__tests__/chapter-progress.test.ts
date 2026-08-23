@@ -79,6 +79,57 @@ describe('getChapterProgress', () => {
   });
 });
 
+describe('one chapter spread over three days', () => {
+  // Genesis 1 read 1-10 on Sunday, 11-20 on Monday, 21-31 on Tuesday.
+  const day1 = partial('2026-08-23', 1, 1, 10);
+  const day2 = partial('2026-08-24', 1, 11, 20);
+  const day3 = partial('2026-08-25', 1, 21, 31);
+
+  it('shows the right remainder at each step', () => {
+    const after1 = getChapterProgress([day1], GEN1, PROTESTANT_CANON_INDEX);
+    expect(after1?.remaining).toEqual([{ from: 11, to: 31 }]);
+
+    const after2 = getChapterProgress([day1, day2], GEN1, PROTESTANT_CANON_INDEX);
+    expect(after2?.remaining).toEqual([{ from: 21, to: 31 }]);
+    expect(after2?.isPartial).toBe(true);
+  });
+
+  it('is one finished chapter once the third sitting lands', () => {
+    const all = [day1, day2, day3];
+    const progress = getChapterProgress(all, GEN1, PROTESTANT_CANON_INDEX);
+    // Three adjacent spans collapse into one: the merge is not limited to a pair.
+    expect(progress?.read).toEqual([{ from: 1, to: 31 }]);
+    expect(progress?.isComplete).toBe(true);
+    expect(countChaptersRead(all, PROTESTANT_CANON_INDEX)).toBe(1);
+    expect(getUnfinishedChapters(all, PROTESTANT_CANON_INDEX)).toEqual([]);
+  });
+
+  it('stays in the backlog on the middle day, not finished early', () => {
+    const unfinished = getUnfinishedChapters([day1, day2], PROTESTANT_CANON_INDEX);
+    expect(unfinished).toHaveLength(1);
+    expect(unfinished[0]?.remaining).toEqual([{ from: 21, to: 31 }]);
+    expect(countChaptersRead([day1, day2], PROTESTANT_CANON_INDEX)).toBe(0);
+  });
+
+  it('works when the sittings arrive out of order', () => {
+    // Backfilling an earlier day must not change the outcome.
+    const progress = getChapterProgress([day3, day1, day2], GEN1, PROTESTANT_CANON_INDEX);
+    expect(progress?.read).toEqual([{ from: 1, to: 31 }]);
+    expect(progress?.isComplete).toBe(true);
+  });
+
+  it('handles gaps left by skipping a middle stretch', () => {
+    // Read 1-10 and 21-31 but never 11-20: two gaps must not merge.
+    const progress = getChapterProgress([day1, day3], GEN1, PROTESTANT_CANON_INDEX);
+    expect(progress?.read).toEqual([
+      { from: 1, to: 10 },
+      { from: 21, to: 31 },
+    ]);
+    expect(progress?.remaining).toEqual([{ from: 11, to: 20 }]);
+    expect(progress?.isComplete).toBe(false);
+  });
+});
+
 describe('countChaptersRead', () => {
   it('counts a chapter read in two sittings once', () => {
     // Two rows, one chapter — this is what inflated the dashboard statistic.

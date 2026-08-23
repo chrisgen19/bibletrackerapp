@@ -149,7 +149,11 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
         <Text variant="body" color="secondary">
           {day.scheduled.kind === 'canon-complete'
             ? 'You had already finished the entire Bible by this day, so nothing was scheduled.'
-            : 'Your reading plan hadn’t started yet on this day.'}
+            : day.scheduled.kind === 'not-scheduled'
+              ? // The position never moved, so this day cost nothing — there is no
+                // chapter it was "supposed" to be, and naming one would be a fiction.
+                'Nothing was recorded on this day. Your place in the plan is unchanged.'
+              : 'Your reading plan hadn’t started yet on this day.'}
         </Text>
         {isCompleted ? (
           <CompletedBlock

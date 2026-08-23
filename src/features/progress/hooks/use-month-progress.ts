@@ -22,7 +22,7 @@ export interface MonthProgress {
  * without a second pass.
  */
 export function useMonthProgress(monthKey: MonthKey): MonthProgress {
-  const { plans, completionLookup, today } = useReadingData();
+  const { plans, completionLookup, scheduleContext, today } = useReadingData();
 
   return useMemo(() => {
     const calendar = buildCalendarMonth(monthKey);
@@ -30,17 +30,18 @@ export function useMonthProgress(monthKey: MonthKey): MonthProgress {
     const readings = new Map<DateKey, DayReading>();
     for (const week of calendar.weeks) {
       for (const cell of week) {
-        readings.set(cell.date, getDayReading(plans, cell.date, completionLookup, today));
+        readings.set(cell.date, getDayReading(plans, cell.date, scheduleContext));
       }
     }
 
     const statistics = calculateMonthStatistics({
       plans,
       completions: completionLookup,
+      context: scheduleContext,
       monthDates: calendar.monthDates,
       today,
     });
 
     return { calendar, statistics, readings };
-  }, [monthKey, plans, completionLookup, today]);
+  }, [monthKey, plans, completionLookup, scheduleContext, today]);
 }

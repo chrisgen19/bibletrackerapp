@@ -1,4 +1,5 @@
 
+import type { ScheduleContext } from '@/features/reading-plan/domain/schedule';
 import {
   getEarliestPlanStart,
   isScheduledDay,
@@ -33,6 +34,8 @@ export interface MonthStatisticsInput {
   /** Every day of the target month, in order. */
   readonly monthDates: readonly DateKey[];
   readonly today: DateKey;
+  /** Supplies the reading position, so a finished canon stops expecting readings. */
+  readonly context: ScheduleContext;
 }
 
 function emptyStatistics(kind: MonthKind): MonthStatistics {
@@ -44,6 +47,7 @@ export function calculateMonthStatistics({
   completions,
   monthDates,
   today,
+  context,
 }: MonthStatisticsInput): MonthStatistics {
   const firstDay = monthDates[0];
   const lastDay = monthDates[monthDates.length - 1];
@@ -60,7 +64,7 @@ export function calculateMonthStatistics({
   let scheduledDays = 0;
 
   for (const date of monthDates) {
-    if (!isScheduledDay(plans, date)) continue;
+    if (!isScheduledDay(plans, date, context)) continue;
     scheduledDays += 1;
 
     const elapsed = compareDateKeys(date, today) <= 0;
