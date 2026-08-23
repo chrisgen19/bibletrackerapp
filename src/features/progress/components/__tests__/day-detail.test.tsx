@@ -166,6 +166,39 @@ describe('DayDetail — partial chapters', () => {
     expect(queryByTestId('mark-day-read')).toBeNull();
   });
 
+  it('records the span against the scheduled chapter, not everything logged that day', async () => {
+    // Regression: a day holding both a partial scheduled read and a custom log of a
+    // different chapter passed two chapters, so the repository dropped the span and
+    // wrote whole-chapter sentinels — falsely completing the scheduled chapter.
+    const onComplete = jest.fn(() => true);
+    const { getByTestId } = await renderDetail(
+      makeDay({
+        status: 'completed',
+        completedChapters: [
+          { bookId: 'GEN', chapter: 21 },
+          { bookId: 'EXO', chapter: 1 },
+        ],
+      }),
+      { progress: progressFor([{ from: 1, to: 10 }]), onComplete },
+    );
+
+    await fireEvent.press(getByTestId('mark-day-read'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 11, to: 34 });
+  });
+
+  it('does not claim the day is complete just because the chapter was read elsewhere', async () => {
+    // Chapter progress spans every date. A chapter read on another day, then
+    // scheduled again after a plan change, must not mark this day complete.
+    const { queryByTestId, getByTestId } = await renderDetail(
+      makeDay({ status: 'today-pending', completedChapters: [] }),
+      { progress: progressFor([{ from: 1, to: 34 }]) },
+    );
+
+    expect(queryByTestId('undo-completion')).toBeNull();
+    expect(getByTestId('mark-day-read')).toBeTruthy();
+  });
+
   it('does not offer verse tracking on a future day', async () => {
     const { queryByTestId } = await renderDetail(
       makeDay({ date: '2026-09-01', status: 'upcoming' }),

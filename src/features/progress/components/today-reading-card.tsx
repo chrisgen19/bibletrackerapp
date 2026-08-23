@@ -14,7 +14,7 @@ import { Card } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import type { ChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
-import { formatReferenceSpan } from '@/features/reading-plan/domain/reference';
+import { distinctReferences, formatReferenceSpan } from '@/features/reading-plan/domain/reference';
 import type { DayReading } from '@/features/reading-plan/domain/types';
 import { formatVerseRanges } from '@/features/reading-plan/domain/verse-range';
 import { useTheme } from '@/theme/theme-provider';
@@ -84,8 +84,10 @@ export function TodayReadingCard({
   // A completed day shows what was actually recorded, which differs from the
   // schedule after a custom log. The day sheet applies the same rule, and the two
   // surfaces must not disagree about the same day.
-  const chapters =
-    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters;
+  // Duplicates collapse: two spans of one chapter are one chapter, not "Genesis 24–24".
+  const chapters = distinctReferences(
+    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters,
+  );
   const reference = formatReferenceSpan(chapters);
   const chapterCount = chapters.length;
 

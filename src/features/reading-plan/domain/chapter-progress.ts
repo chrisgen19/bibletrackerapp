@@ -53,6 +53,32 @@ export function getChapterProgress(
 }
 
 /**
+ * How many distinct chapters have been read all the way through.
+ *
+ * Not the number of completion rows: a chapter read in two sittings produces two
+ * rows, and a chapter left half-read produces one without being finished at all.
+ */
+export function countChaptersRead(
+  completions: readonly ReadingCompletion[],
+  index: CanonIndex = getCanonIndex('protestant'),
+): number {
+  const seen = new Set<string>();
+  let finished = 0;
+  for (const completion of completions) {
+    const key = `${completion.bookId}:${completion.chapter}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const progress = getChapterProgress(
+      completions,
+      { bookId: completion.bookId, chapter: completion.chapter },
+      index,
+    );
+    if (progress?.isComplete === true) finished += 1;
+  }
+  return finished;
+}
+
+/**
  * Chapters that were started but never finished.
  *
  * This is the backlog the UI surfaces as "still to finish". Ordered by canon

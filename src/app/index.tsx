@@ -17,7 +17,7 @@ import {
 } from '@/features/progress/domain/calendar-month';
 import { useMonthWindow } from '@/features/progress/hooks/use-month-window';
 import { useStreaks } from '@/features/progress/hooks/use-streaks';
-import { getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
+import { countChaptersRead, getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { useTodayReading } from '@/features/reading-plan/hooks/use-today-reading';
 import { useTheme } from '@/theme/theme-provider';
@@ -45,6 +45,12 @@ export default function ProgressScreen() {
     if (chapter === undefined) return null;
     return getChapterProgress(completions, chapter, getCanonIndex(activePlan?.canonId ?? 'protestant'));
   }, [todayReading.scheduled, completions, activePlan]);
+
+  /** Chapters finished, not completion rows — a chapter read in two sittings is one. */
+  const chaptersRead = useMemo(
+    () => countChaptersRead(completions, getCanonIndex(activePlan?.canonId ?? 'protestant')),
+    [completions, activePlan],
+  );
   const isViewingCurrentMonth = monthKeysEqual(monthKey, currentMonthKey);
 
   const stepMonth = useCallback((step: number) => {
@@ -116,7 +122,7 @@ export default function ProgressScreen() {
             stats={[
               { icon: 'flame', value: String(streaks.current), label: 'day streak' },
               { icon: 'calendar', value: String(streaks.longest), label: 'longest streak' },
-              { icon: 'book.closed', value: String(completions.length), label: 'chapters read' },
+              { icon: 'book.closed', value: String(chaptersRead), label: 'chapters read' },
             ]}
           />
         </View>

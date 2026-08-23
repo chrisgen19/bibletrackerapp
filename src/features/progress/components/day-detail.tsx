@@ -16,7 +16,11 @@ import { ChapterPicker } from '@/features/reading-plan/components/chapter-picker
 import { VersePicker } from '@/features/reading-plan/components/verse-picker';
 import type { ChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { buildContinuationDraft } from '@/features/reading-plan/domain/continuation';
-import { formatReference, formatReferenceSpan } from '@/features/reading-plan/domain/reference';
+import {
+  distinctReferences,
+  formatReference,
+  formatReferenceSpan,
+} from '@/features/reading-plan/domain/reference';
 import type { CompletionLookup } from '@/features/reading-plan/domain/schedule';
 import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import { formatVerseRange, formatVerseRanges } from '@/features/reading-plan/domain/verse-range';
@@ -150,9 +154,11 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
   }
 
   // A completed day shows exactly what was recorded, which can differ from the current
-  // schedule after a plan change or a custom log.
-  const chapters =
-    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters;
+  // schedule after a plan change or a custom log. Duplicates collapse: a chapter read
+  // in two sittings is one chapter, not two.
+  const chapters = distinctReferences(
+    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters,
+  );
 
   // Verse tracking only applies to a single scheduled chapter — reading part of
   // several at once is not a thing anyone does.
@@ -168,6 +174,21 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
   // The chapter is unfinished even though the day itself has a reading recorded:
   // this is the "read 1-10 yesterday" case, and it must still offer to continue.
   const showContinue = canTrackVerses && progress !== null && progress.isPartial;
+
+  /**
+   * What a press records. When tracking verses this must be the *scheduled* chapter
+   * that `progress` describes — not everything logged that day. Passing several
+   * chapters makes the repository drop the span and write whole-chapter sentinels,
+   * which would falsely complete the scheduled chapter.
+   */
+  const chaptersToRecord = canTrackVerses ? day.scheduled.chapters : chapters;
+
+  /**
+   * Chapter-wide completion is not day completion. A chapter read on another date and
+   * scheduled again after a plan change would otherwise show this day as done, with an
+   * Undo that deletes nothing here.
+   */
+  const showCompleted = isCompleted && (progress === null || !progress.isPartial);
 
   return (
     <View>
@@ -189,7 +210,7 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
       ) : null}
 
       <View style={{ marginTop: theme.spacing.xl }}>
-        {progress?.isComplete === true || (isCompleted && !showContinue) ? (
+        {showCompleted ? (
           <CompletedBlock day={day} onUndo={onUndo} reducedMotion={reducedMotion} />
         ) : isFuture ? (
           <View
@@ -231,7 +252,7 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
                   : `Mark ${formatVerseRange(span)} as Read`
               }
               onPress={() => {
-                const recorded = onComplete(chapters, canTrackVerses ? span : undefined);
+                const recorded = onComplete(chaptersToRecord, canTrackVerses ? span : undefined);
                 if (recorded) setToVerse(null);
               }}
               accessibilityHint={

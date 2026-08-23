@@ -150,6 +150,24 @@ describe('TodayReadingCard', () => {
     expect(getByText('Completed today')).toBeTruthy();
   });
 
+  it('treats two spans of one chapter as one chapter', async () => {
+    // Regression: reading 1-10 then finishing the same day leaves two rows, which
+    // rendered as "Genesis 24-24" and "2 chapters".
+    const { getByText, queryByText } = await renderCard(
+      makeDay({
+        status: 'completed',
+        completedChapters: [
+          { bookId: 'GEN', chapter: 24 },
+          { bookId: 'GEN', chapter: 24 },
+        ],
+      }),
+    );
+
+    expect(getByText('Genesis 24')).toBeTruthy();
+    expect(queryByText('Genesis 24–24')).toBeNull();
+    expect(getByText('One chapter')).toBeTruthy();
+  });
+
   it('pluralises multi-chapter days', async () => {
     const { getByText } = await renderCard(
       makeDay({
