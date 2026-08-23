@@ -4,8 +4,10 @@ import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/empty-state';
-import type { BibleReference } from '@/data/bible/canon';
+import type { BibleReference, VerseRange } from '@/data/bible/canon';
+import { getCanonIndex } from '@/data/bible/canon-index';
 import { DayDetail } from '@/features/progress/components/day-detail';
+import { getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { getDayReading } from '@/features/reading-plan/domain/schedule';
 import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
@@ -18,7 +20,8 @@ export default function DayDetailScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { date } = useLocalSearchParams<{ date: string }>();
-  const { plans, completionLookup, today, completeReading, undoReading, changePlan } = useReadingData();
+  const { plans, completions, completionLookup, today, completeReading, undoReading, changePlan } =
+    useReadingData();
 
   const isValid = typeof date === 'string' && isValidDateKey(date);
 
@@ -27,10 +30,22 @@ export default function DayDetailScreen() {
     [isValid, date, plans, completionLookup, today],
   );
 
+  /**
+   * Progress on the day's single scheduled chapter, across every day it was touched.
+   * Verse tracking is offered only for a one-chapter day.
+   */
+  const progress = useMemo(() => {
+    if (day === null || day.scheduled.kind !== 'scheduled') return null;
+    const chapter = day.scheduled.chapters.length === 1 ? day.scheduled.chapters[0] : undefined;
+    if (chapter === undefined) return null;
+    const canonId = day.plan?.canonId ?? 'protestant';
+    return getChapterProgress(completions, chapter, getCanonIndex(canonId));
+  }, [day, completions]);
+
   const handleComplete = useCallback(
-    (chapters: readonly BibleReference[]): boolean => {
+    (chapters: readonly BibleReference[], verses?: VerseRange): boolean => {
       if (day === null) return false;
-      const logged = completeReading(day.date, chapters);
+      const logged = completeReading(day.date, chapters, verses);
       if (logged) completionHaptic();
       return logged;
     },
@@ -87,6 +102,7 @@ export default function DayDetailScreen() {
         onUndo={handleUndo}
         onChangePlan={handleChangePlan}
         completions={completionLookup}
+        progress={progress}
       />
     </View>
   );

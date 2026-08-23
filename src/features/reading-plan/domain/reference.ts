@@ -105,6 +105,26 @@ export function formatReferenceShort(
   return `${book?.abbreviation ?? reference.bookId} ${reference.chapter}`;
 }
 
+/**
+ * Removes duplicate references, preserving order.
+ *
+ * A chapter read in two sittings produces two completion rows, and presenting them
+ * as two chapters would both inflate counts and render as "Genesis 21–21".
+ */
+export function distinctReferences(
+  references: readonly BibleReference[],
+): readonly BibleReference[] {
+  const seen = new Set<string>();
+  const unique: BibleReference[] = [];
+  for (const reference of references) {
+    const key = `${reference.bookId}:${reference.chapter}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(reference);
+  }
+  return unique;
+}
+
 /** `"Genesis 1–3"` for a contiguous span, `"Genesis 1"` for a single chapter. */
 export function formatReferenceSpan(
   span: readonly BibleReference[],

@@ -1,6 +1,6 @@
 import { PROTESTANT_CANON_INDEX } from '@/data/bible/canon-index';
 
-import { getChapterProgress, getUnfinishedChapters } from '../chapter-progress';
+import { countChaptersRead, getChapterProgress, getUnfinishedChapters } from '../chapter-progress';
 import { makeCompletion } from './fixtures';
 
 // Genesis 1 has 31 verses; Genesis 2 has 25.
@@ -76,6 +76,48 @@ describe('getChapterProgress', () => {
       PROTESTANT_CANON_INDEX,
     );
     expect(progress?.isComplete).toBe(true);
+  });
+});
+
+describe('countChaptersRead', () => {
+  it('counts a chapter read in two sittings once', () => {
+    // Two rows, one chapter — this is what inflated the dashboard statistic.
+    expect(
+      countChaptersRead(
+        [partial('2026-08-01', 1, 1, 10), partial('2026-08-02', 1, 11, 31)],
+        PROTESTANT_CANON_INDEX,
+      ),
+    ).toBe(1);
+  });
+
+  it('does not count a chapter left unfinished', () => {
+    expect(countChaptersRead([partial('2026-08-01', 1, 1, 10)], PROTESTANT_CANON_INDEX)).toBe(0);
+  });
+
+  it('counts whole-chapter rows', () => {
+    expect(
+      countChaptersRead(
+        [makeCompletion('2026-08-01'), makeCompletion('2026-08-02', { chapter: 2 })],
+        PROTESTANT_CANON_INDEX,
+      ),
+    ).toBe(2);
+  });
+
+  it('counts nothing when nothing has been read', () => {
+    expect(countChaptersRead([], PROTESTANT_CANON_INDEX)).toBe(0);
+  });
+
+  it('mixes finished and unfinished chapters correctly', () => {
+    expect(
+      countChaptersRead(
+        [
+          makeCompletion('2026-08-01'),              // Genesis 1 whole
+          partial('2026-08-02', 2, 1, 10),           // Genesis 2 partial
+          partial('2026-08-03', 3, 1, 24),           // Genesis 3 whole (24 verses)
+        ],
+        PROTESTANT_CANON_INDEX,
+      ),
+    ).toBe(2);
   });
 });
 

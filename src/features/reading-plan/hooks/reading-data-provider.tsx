@@ -9,7 +9,7 @@ import {
 } from 'react';
 import { AppState } from 'react-native';
 
-import type { BibleReference } from '@/data/bible/canon';
+import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import type { Database } from '@/db/client';
 import { useDatabase } from '@/db/database-provider';
 import {
@@ -52,8 +52,17 @@ interface ReadingDataValue {
   hasCompletedOnboarding: boolean;
   startPlan: (draft: ReadingPlanDraft) => void;
   changePlan: (draft: ReadingPlanDraft) => void;
-  /** Returns false when nothing was written, so callers never claim a phantom success. */
-  completeReading: (date: DateKey, chapters: readonly BibleReference[]) => boolean;
+  /**
+   * Returns false when nothing was written, so callers never claim a phantom success.
+   *
+   * `verses` records a partial read and applies only when a single chapter is given —
+   * you read part of one chapter, never part of several.
+   */
+  completeReading: (
+    date: DateKey,
+    chapters: readonly BibleReference[],
+    verses?: VerseRange,
+  ) => boolean;
   undoReading: (date: DateKey) => void;
   resetProgress: () => void;
 }
@@ -120,7 +129,7 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
   );
 
   const completeReading = useCallback(
-    (date: DateKey, chapters: readonly BibleReference[]): boolean => {
+    (date: DateKey, chapters: readonly BibleReference[], verses?: VerseRange): boolean => {
       if (chapters.length === 0) return false;
       // Completions must belong to a plan row. Normally that is the segment governing
       // the date, but a hand-logged reading can land on a day no segment covers (before
@@ -130,7 +139,7 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
       // rather than swallowing it, so the UI cannot announce a completion that the
       // database never accepted.
       if (plan === null) return false;
-      markReadingComplete(db, { readingPlanId: plan.id, localDate: date, chapters });
+      markReadingComplete(db, { readingPlanId: plan.id, localDate: date, chapters, verses });
       refresh();
       return true;
     },

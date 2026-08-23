@@ -13,15 +13,19 @@ import { Button } from '@/components/button';
 import { Card } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
-import { formatReferenceSpan } from '@/features/reading-plan/domain/reference';
+import type { ChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
+import { distinctReferences, formatReferenceSpan } from '@/features/reading-plan/domain/reference';
 import type { DayReading } from '@/features/reading-plan/domain/types';
+import { formatVerseRanges } from '@/features/reading-plan/domain/verse-range';
 import { useTheme } from '@/theme/theme-provider';
 
 interface TodayReadingCardProps {
   day: DayReading;
   onMarkRead: () => void;
-  /** Opens the day detail sheet, where undo lives. */
+  /** Opens the day detail sheet, where undo and the verse control live. */
   onOpenDetail: () => void;
+  /** Progress on today's chapter, when a single chapter is scheduled. */
+  progress?: ChapterProgress | null;
 }
 
 /**
@@ -31,7 +35,12 @@ interface TodayReadingCardProps {
  * button — undo stays one tap away in the day detail sheet, so the finished state
  * reads as an accomplishment, not a prompt to reverse it.
  */
-export function TodayReadingCard({ day, onMarkRead, onOpenDetail }: TodayReadingCardProps) {
+export function TodayReadingCard({
+  day,
+  onMarkRead,
+  onOpenDetail,
+  progress = null,
+}: TodayReadingCardProps) {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
   const isCompleted = day.status === 'completed';
@@ -75,10 +84,20 @@ export function TodayReadingCard({ day, onMarkRead, onOpenDetail }: TodayReading
   // A completed day shows what was actually recorded, which differs from the
   // schedule after a custom log. The day sheet applies the same rule, and the two
   // surfaces must not disagree about the same day.
-  const chapters =
-    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters;
+  // Duplicates collapse: two spans of one chapter are one chapter, not "Genesis 24–24".
+  const chapters = distinctReferences(
+    isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters,
+  );
   const reference = formatReferenceSpan(chapters);
   const chapterCount = chapters.length;
+
+  // A part-read chapter is a third state: the day is done, the chapter is not.
+  const isPartial = progress?.isPartial === true;
+  const subtitle = isPartial
+    ? `${formatVerseRanges(progress?.remaining ?? [])} still to read`
+    : chapterCount === 1
+      ? 'One chapter'
+      : `${chapterCount} chapters`;
 
   return (
     <Card variant="raised">
@@ -108,11 +127,18 @@ export function TodayReadingCard({ day, onMarkRead, onOpenDetail }: TodayReading
         {reference}
       </Text>
       <Text variant="callout" color="secondary" style={{ marginTop: theme.spacing.xxs }}>
-        {chapterCount === 1 ? 'One chapter' : `${chapterCount} chapters`}
+        {subtitle}
       </Text>
 
       <View style={{ marginTop: theme.spacing.xl }}>
-        {isCompleted ? (
+        {isPartial ? (
+          <Button
+            label="Continue Reading"
+            onPress={onOpenDetail}
+            accessibilityHint={`Opens ${reference} to record how much more you read`}
+            testID="continue-reading"
+          />
+        ) : isCompleted ? (
           <Animated.View entering={reducedMotion ? undefined : FadeIn.duration(theme.duration.base)}>
             <View
               style={[
