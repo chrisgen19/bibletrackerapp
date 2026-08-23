@@ -9,7 +9,8 @@ import { getCanonIndex } from '@/data/bible/canon-index';
 import { CalendarSurface } from '@/features/progress/components/calendar-surface';
 import { StatRow } from '@/features/progress/components/stat-row';
 import { TodayReadingCard } from '@/features/progress/components/today-reading-card';
-import { UnfinishedCard } from '@/features/progress/components/unfinished-card';
+import { BacklogCard } from '@/features/progress/components/backlog-card';
+import type { BacklogEntry } from '@/features/reading-plan/domain/backlog';
 import {
   addMonthsToMonthKey,
   monthKeyFromDateKey,
@@ -18,7 +19,7 @@ import {
 } from '@/features/progress/domain/calendar-month';
 import { useMonthWindow } from '@/features/progress/hooks/use-month-window';
 import { useStreaks } from '@/features/progress/hooks/use-streaks';
-import { useUnfinishedChapters } from '@/features/progress/hooks/use-unfinished-chapters';
+import { useBacklog } from '@/features/progress/hooks/use-backlog';
 import { countChaptersRead, getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { useTodayReading } from '@/features/reading-plan/hooks/use-today-reading';
@@ -36,7 +37,7 @@ export default function ProgressScreen() {
   const monthWindow = useMonthWindow(monthKey);
   const todayReading = useTodayReading();
   const streaks = useStreaks();
-  const unfinished = useUnfinishedChapters();
+  const backlog = useBacklog();
 
   const currentMonthKey = useMemo(() => monthKeyFromDateKey(today), [today]);
 
@@ -68,18 +69,18 @@ export default function ProgressScreen() {
   );
 
   /**
-   * Finishing an unfinished chapter records against *today*, not the day it was
+   * A backlog chapter is recorded against *today*, not the day it was scheduled or
    * started — you are reading it now. The day sheet opens on Custom with the chapter
    * preselected and resumes at the first unread verse.
    */
-  const finishChapter = useCallback(
-    (progress: { reference: { bookId: string; chapter: number } }) => {
+  const openBacklogEntry = useCallback(
+    (entry: BacklogEntry) => {
       router.push({
         pathname: '/day/[date]',
         params: {
           date: today,
-          book: progress.reference.bookId,
-          chapter: String(progress.reference.chapter),
+          book: entry.reference.bookId,
+          chapter: String(entry.reference.chapter),
         },
       });
     },
@@ -139,9 +140,9 @@ export default function ProgressScreen() {
           />
         </View>
 
-        {unfinished.length > 0 ? (
+        {backlog.length > 0 ? (
           <View style={{ marginTop: theme.spacing.xxl }}>
-            <UnfinishedCard chapters={unfinished} onOpen={finishChapter} />
+            <BacklogCard entries={backlog} onOpen={openBacklogEntry} />
           </View>
         ) : null}
 
