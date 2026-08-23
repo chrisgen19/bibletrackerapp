@@ -1,6 +1,7 @@
 import { Alert } from 'react-native';
 
 import { makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
+import type { ChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { createCompletionLookup } from '@/features/reading-plan/domain/schedule';
 import type { DayReading } from '@/features/reading-plan/domain/types';
 import { fireEvent, renderWithTheme } from '@/test-utils/render';
@@ -32,6 +33,7 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       onUndo={onUndo}
       onChangePlan={onChangePlan}
       completions={handlers.completions ?? createCompletionLookup([])}
+      progress={handlers.progress ?? null}
     />,
   );
   return { onComplete, onUndo, onChangePlan, ...queries };
@@ -59,7 +61,8 @@ describe('DayDetail — plan tab', () => {
 
     expect(getByText('Genesis 21')).toBeTruthy();
     await fireEvent.press(getByTestId('mark-day-read'));
-    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }]);
+    // No span: verse tracking is off when the sheet has no chapter progress.
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], undefined);
   });
 
   it('offers undo once completed, showing what was actually recorded', async () => {
@@ -83,6 +86,107 @@ describe('DayDetail — plan tab', () => {
   });
 });
 
+/** Genesis 21 has 34 verses. */
+function progressFor(read: { from: number; to: number }[]): ChapterProgress {
+  const verseCount = 34;
+  const remaining: { from: number; to: number }[] = [];
+  let cursor = 1;
+  for (const r of read) {
+    if (r.from > cursor) remaining.push({ from: cursor, to: r.from - 1 });
+    cursor = Math.max(cursor, r.to + 1);
+  }
+  if (cursor <= verseCount) remaining.push({ from: cursor, to: verseCount });
+  return {
+    reference: { bookId: 'GEN', chapter: 21 },
+    verseCount,
+    read,
+    remaining,
+    isComplete: remaining.length === 0,
+    isPartial: read.length > 0 && remaining.length > 0,
+  };
+}
+
+describe('DayDetail — partial chapters', () => {
+  it('offers a verse limit when a single chapter is scheduled', async () => {
+    const { getByTestId } = await renderDetail(makeDay(), { progress: progressFor([]) });
+    expect(getByTestId('field-to-verse')).toBeTruthy();
+  });
+
+  it('defaults to the whole chapter, so one tap still records everything', async () => {
+    const onComplete = jest.fn(() => true);
+    const { getByTestId } = await renderDetail(makeDay(), { progress: progressFor([]), onComplete });
+
+    await fireEvent.press(getByTestId('mark-day-read'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 1, to: 34 });
+  });
+
+  it('records only as far as the chosen verse', async () => {
+    const onComplete = jest.fn(() => true);
+    const { getByTestId, getByLabelText } = await renderDetail(makeDay(), {
+      progress: progressFor([]),
+      onComplete,
+    });
+
+    await fireEvent.press(getByTestId('field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    await fireEvent.press(getByTestId('mark-day-read'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 1, to: 10 });
+  });
+
+  it('shows what is read and what is left when a chapter is unfinished', async () => {
+    const { getByText } = await renderDetail(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] }),
+      { progress: progressFor([{ from: 1, to: 10 }]) },
+    );
+    expect(getByText('Read 1–10 · 11–34 to go')).toBeTruthy();
+  });
+
+  it('still offers to continue when the day is marked but the chapter is not finished', async () => {
+    // The crux: reading 1-10 completes the *day* but not the *chapter*.
+    const onComplete = jest.fn(() => true);
+    const { getByTestId } = await renderDetail(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] }),
+      { progress: progressFor([{ from: 1, to: 10 }]), onComplete },
+    );
+
+    await fireEvent.press(getByTestId('mark-day-read'));
+
+    // Resumes at 11 rather than starting over.
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 11, to: 34 });
+  });
+
+  it('shows the completed state once every verse is read', async () => {
+    const { getByTestId, queryByTestId } = await renderDetail(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] }),
+      { progress: progressFor([{ from: 1, to: 34 }]) },
+    );
+    expect(getByTestId('undo-completion')).toBeTruthy();
+    expect(queryByTestId('mark-day-read')).toBeNull();
+  });
+
+  it('does not offer verse tracking on a future day', async () => {
+    const { queryByTestId } = await renderDetail(
+      makeDay({ date: '2026-09-01', status: 'upcoming' }),
+      { progress: progressFor([]) },
+    );
+    expect(queryByTestId('field-to-verse')).toBeNull();
+  });
+
+  it('resumes from the first unread verse in the picker', async () => {
+    const { getByTestId, queryByLabelText } = await renderDetail(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] }),
+      { progress: progressFor([{ from: 1, to: 10 }]) },
+    );
+
+    await fireEvent.press(getByTestId('field-to-verse'));
+    // Already-read verses are not offered again.
+    expect(queryByLabelText('To verse 5')).toBeNull();
+    expect(queryByLabelText('To verse 11')).not.toBeNull();
+  });
+});
+
 describe('DayDetail — custom tab', () => {
   it('logs an arbitrary chapter for the day', async () => {
     const { getByTestId, onComplete } = await renderDetail(makeDay());
@@ -91,6 +195,7 @@ describe('DayDetail — custom tab', () => {
     await fireEvent.press(getByTestId('log-custom-reading'));
 
     // Defaults to the scheduled chapter until the user picks something else.
+    // No span: verse tracking is off when the sheet has no chapter progress.
     expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }]);
   });
 

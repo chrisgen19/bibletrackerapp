@@ -14,14 +14,34 @@ function makeDay(overrides: Partial<DayReading> = {}): DayReading {
   };
 }
 
-function renderCard(day: DayReading, handlers: { onMarkRead?: () => void; onOpenDetail?: () => void } = {}) {
+function renderCard(
+  day: DayReading,
+  handlers: {
+    onMarkRead?: () => void;
+    onOpenDetail?: () => void;
+    progress?: Parameters<typeof TodayReadingCard>[0]['progress'];
+  } = {},
+) {
   return renderWithTheme(
     <TodayReadingCard
       day={day}
       onMarkRead={handlers.onMarkRead ?? jest.fn()}
       onOpenDetail={handlers.onOpenDetail ?? jest.fn()}
+      progress={handlers.progress ?? null}
     />,
   );
+}
+
+/** Genesis 24 has 67 verses. */
+function partialProgress(readTo: number) {
+  return {
+    reference: { bookId: 'GEN', chapter: 24 },
+    verseCount: 67,
+    read: [{ from: 1, to: readTo }],
+    remaining: [{ from: readTo + 1, to: 67 }],
+    isComplete: false,
+    isPartial: true,
+  };
 }
 
 describe('TodayReadingCard', () => {
@@ -89,6 +109,45 @@ describe('TodayReadingCard', () => {
     );
 
     expect(getByText('Your plan starts soon')).toBeTruthy();
+  });
+
+  it('shows what is left when the chapter is part-read', async () => {
+    const { getByText } = await renderCard(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 24 }] }),
+      { progress: partialProgress(10) },
+    );
+    expect(getByText('11–67 still to read')).toBeTruthy();
+  });
+
+  it('offers to continue rather than claiming the day is done', async () => {
+    // The day has a reading recorded, but the chapter is unfinished — saying
+    // "Completed today" here would be a small lie.
+    const onOpenDetail = jest.fn();
+    const { getByTestId, queryByText } = await renderCard(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 24 }] }),
+      { progress: partialProgress(10), onOpenDetail },
+    );
+
+    expect(queryByText('Completed today')).toBeNull();
+    await fireEvent.press(getByTestId('continue-reading'));
+    expect(onOpenDetail).toHaveBeenCalledTimes(1);
+  });
+
+  it('says completed once the whole chapter is read', async () => {
+    const { getByText } = await renderCard(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 24 }] }),
+      {
+        progress: {
+          reference: { bookId: 'GEN', chapter: 24 },
+          verseCount: 67,
+          read: [{ from: 1, to: 67 }],
+          remaining: [],
+          isComplete: true,
+          isPartial: false,
+        },
+      },
+    );
+    expect(getByText('Completed today')).toBeTruthy();
   });
 
   it('pluralises multi-chapter days', async () => {

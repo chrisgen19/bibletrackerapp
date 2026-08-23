@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton } from '@/components/icon-button';
 import { Text } from '@/components/text';
+import { getCanonIndex } from '@/data/bible/canon-index';
 import { CalendarSurface } from '@/features/progress/components/calendar-surface';
 import { StatRow } from '@/features/progress/components/stat-row';
 import { TodayReadingCard } from '@/features/progress/components/today-reading-card';
@@ -16,6 +17,7 @@ import {
 } from '@/features/progress/domain/calendar-month';
 import { useMonthWindow } from '@/features/progress/hooks/use-month-window';
 import { useStreaks } from '@/features/progress/hooks/use-streaks';
+import { getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { useTodayReading } from '@/features/reading-plan/hooks/use-today-reading';
 import { useTheme } from '@/theme/theme-provider';
@@ -26,7 +28,7 @@ export default function ProgressScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { hasCompletedOnboarding, today, completions, completeReading } = useReadingData();
+  const { hasCompletedOnboarding, today, completions, completeReading, activePlan } = useReadingData();
 
   const [monthKey, setMonthKey] = useState<MonthKey>(() => monthKeyFromDateKey(today));
   const monthWindow = useMonthWindow(monthKey);
@@ -34,6 +36,15 @@ export default function ProgressScreen() {
   const streaks = useStreaks();
 
   const currentMonthKey = useMemo(() => monthKeyFromDateKey(today), [today]);
+
+  /** Progress on today's chapter, so the card can show what is left to read. */
+  const todayProgress = useMemo(() => {
+    if (todayReading.scheduled.kind !== 'scheduled') return null;
+    const chapter =
+      todayReading.scheduled.chapters.length === 1 ? todayReading.scheduled.chapters[0] : undefined;
+    if (chapter === undefined) return null;
+    return getChapterProgress(completions, chapter, getCanonIndex(activePlan?.canonId ?? 'protestant'));
+  }, [todayReading.scheduled, completions, activePlan]);
   const isViewingCurrentMonth = monthKeysEqual(monthKey, currentMonthKey);
 
   const stepMonth = useCallback((step: number) => {
@@ -96,6 +107,7 @@ export default function ProgressScreen() {
             day={todayReading}
             onMarkRead={markTodayRead}
             onOpenDetail={() => openDay(today)}
+            progress={todayProgress}
           />
         </View>
 

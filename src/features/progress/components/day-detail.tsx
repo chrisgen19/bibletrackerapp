@@ -4,18 +4,22 @@ import { Alert, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn, useReducedMotion } from 'react-native-reanimated';
 
 import { Button } from '@/components/button';
+import { Card } from '@/components/card';
 import { FieldRow } from '@/components/field-row';
 import { Icon } from '@/components/icon';
 import { SegmentedControl, type SegmentOption } from '@/components/segmented-control';
 import { Text } from '@/components/text';
-import type { BibleReference } from '@/data/bible/canon';
+import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import { DEFAULT_CANON_ID, getCanonIndex } from '@/data/bible/canon-index';
 import { BookPicker } from '@/features/reading-plan/components/book-picker';
 import { ChapterPicker } from '@/features/reading-plan/components/chapter-picker';
+import { VersePicker } from '@/features/reading-plan/components/verse-picker';
+import type { ChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { buildContinuationDraft } from '@/features/reading-plan/domain/continuation';
 import { formatReference, formatReferenceSpan } from '@/features/reading-plan/domain/reference';
 import type { CompletionLookup } from '@/features/reading-plan/domain/schedule';
 import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
+import { formatVerseRange, formatVerseRanges } from '@/features/reading-plan/domain/verse-range';
 import { useTheme } from '@/theme/theme-provider';
 import { compareDateKeys, fromDateKey, type DateKey } from '@/utils/date-key';
 
@@ -29,15 +33,28 @@ const TABS: readonly SegmentOption<Tab>[] = [
 interface DayDetailProps {
   day: DayReading;
   today: DateKey;
-  onComplete: (chapters: readonly BibleReference[]) => boolean;
+  onComplete: (chapters: readonly BibleReference[], verses?: VerseRange) => boolean;
   onUndo: () => void;
   /** Moves the reading position so the next unread day follows on from a logged chapter. */
   onChangePlan: (draft: ReadingPlanDraft) => void;
   /** Lets a continuation skip days that are already recorded. */
   completions: CompletionLookup;
+  /**
+   * Progress on the scheduled chapter across every day it was touched, or `null`
+   * when the day schedules no single chapter.
+   */
+  progress: ChapterProgress | null;
 }
 
-export function DayDetail({ day, today, onComplete, onUndo, onChangePlan, completions }: DayDetailProps) {
+export function DayDetail({
+  day,
+  today,
+  onComplete,
+  onUndo,
+  onChangePlan,
+  completions,
+  progress,
+}: DayDetailProps) {
   const theme = useTheme();
   const [tab, setTab] = useState<Tab>('plan');
 
@@ -67,6 +84,7 @@ export function DayDetail({ day, today, onComplete, onUndo, onChangePlan, comple
           isCompleted={isCompleted}
           onComplete={onComplete}
           onUndo={onUndo}
+          progress={progress}
         />
       ) : (
         <CustomPanel
@@ -101,13 +119,16 @@ interface PlanPanelProps {
   day: DayReading;
   isFuture: boolean;
   isCompleted: boolean;
-  onComplete: (chapters: readonly BibleReference[]) => boolean;
+  onComplete: (chapters: readonly BibleReference[], verses?: VerseRange) => boolean;
   onUndo: () => void;
+  progress: ChapterProgress | null;
 }
 
-function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo }: PlanPanelProps) {
+function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }: PlanPanelProps) {
   const theme = useTheme();
   const reducedMotion = useReducedMotion();
+  const [versePickerOpen, setVersePickerOpen] = useState(false);
+  const [toVerse, setToVerse] = useState<number | null>(null);
 
   if (day.scheduled.kind !== 'scheduled') {
     return (
@@ -133,12 +154,42 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo }: PlanPanel
   const chapters =
     isCompleted && day.completedChapters.length > 0 ? day.completedChapters : day.scheduled.chapters;
 
+  // Verse tracking only applies to a single scheduled chapter — reading part of
+  // several at once is not a thing anyone does.
+  const canTrackVerses = !isFuture && progress !== null && day.scheduled.chapters.length === 1;
+  const chapterLabel = formatReferenceSpan(day.scheduled.chapters);
+
+  const fromVerse = progress?.remaining[0]?.from ?? 1;
+  const lastVerse = progress?.verseCount ?? 1;
+  const endVerse = toVerse ?? lastVerse;
+  const span: VerseRange = { from: fromVerse, to: endVerse };
+  const finishesChapter = endVerse >= lastVerse;
+
+  // The chapter is unfinished even though the day itself has a reading recorded:
+  // this is the "read 1-10 yesterday" case, and it must still offer to continue.
+  const showContinue = canTrackVerses && progress !== null && progress.isPartial;
+
   return (
     <View>
       <ReferenceBlock label={isFuture ? 'SCHEDULED' : 'READING'} chapters={chapters} />
 
+      {showContinue && progress !== null ? (
+        <View
+          style={{
+            marginTop: theme.spacing.md,
+            padding: theme.spacing.lg,
+            borderRadius: theme.radius.lg,
+            backgroundColor: theme.colors.accentSoft,
+          }}
+        >
+          <Text variant="footnote" color="accent">
+            {`Read ${formatVerseRanges(progress.read)} · ${formatVerseRanges(progress.remaining)} to go`}
+          </Text>
+        </View>
+      ) : null}
+
       <View style={{ marginTop: theme.spacing.xl }}>
-        {isCompleted ? (
+        {progress?.isComplete === true || (isCompleted && !showContinue) ? (
           <CompletedBlock day={day} onUndo={onUndo} reducedMotion={reducedMotion} />
         ) : isFuture ? (
           <View
@@ -153,14 +204,58 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo }: PlanPanel
             </Text>
           </View>
         ) : (
-          <Button
-            label="Mark as Read"
-            onPress={() => onComplete(chapters)}
-            accessibilityHint={`Marks ${formatReferenceSpan(chapters)} as read`}
-            testID="mark-day-read"
-          />
+          <>
+            {canTrackVerses ? (
+              <View style={{ marginBottom: theme.spacing.md }}>
+                <Card padded={false}>
+                  <FieldRow
+                    label="Read to verse"
+                    value={finishesChapter ? `${lastVerse} — the end` : String(endVerse)}
+                    onPress={() => setVersePickerOpen(true)}
+                    last
+                    testID="field-to-verse"
+                  />
+                </Card>
+                <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
+                  {finishesChapter
+                    ? 'Stopping early? Set how far you got and finish the rest another day.'
+                    : `Recording ${formatVerseRange(span)}. The rest stays waiting for you.`}
+                </Text>
+              </View>
+            ) : null}
+
+            <Button
+              label={
+                !canTrackVerses || (finishesChapter && fromVerse === 1)
+                  ? 'Mark as Read'
+                  : `Mark ${formatVerseRange(span)} as Read`
+              }
+              onPress={() => {
+                const recorded = onComplete(chapters, canTrackVerses ? span : undefined);
+                if (recorded) setToVerse(null);
+              }}
+              accessibilityHint={
+                canTrackVerses
+                  ? `Records ${chapterLabel} verses ${formatVerseRange(span)} as read`
+                  : `Marks ${formatReferenceSpan(chapters)} as read`
+              }
+              testID="mark-day-read"
+            />
+          </>
         )}
       </View>
+
+      {canTrackVerses && progress !== null ? (
+        <VersePicker
+          visible={versePickerOpen}
+          chapterLabel={chapterLabel}
+          fromVerse={fromVerse}
+          verseCount={progress.verseCount}
+          selectedTo={endVerse}
+          onSelect={setToVerse}
+          onClose={() => setVersePickerOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }
