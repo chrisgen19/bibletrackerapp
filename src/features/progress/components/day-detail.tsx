@@ -180,7 +180,12 @@ function PlanPanel({ day, isFuture, isCompleted, onComplete, onUndo, progress }:
 
   const fromVerse = progress?.remaining[0]?.from ?? 1;
   const lastVerse = progress?.verseCount ?? 1;
-  const endVerse = toVerse ?? lastVerse;
+  // A selection below `fromVerse` is stale: progress advanced past it while the sheet
+  // stayed open. Treat it as unset rather than building a reversed span — normalise
+  // would swap 11–10 into 10–11 and mark a verse read that never was. The setters
+  // that clear `toVerse` keep the label honest; this keeps the *data* safe even if a
+  // future path forgets one.
+  const endVerse = toVerse !== null && toVerse >= fromVerse ? toVerse : lastVerse;
   const span: VerseRange = { from: fromVerse, to: endVerse };
   const finishesChapter = endVerse >= lastVerse;
 
@@ -344,7 +349,12 @@ function CustomPanel({
   const progress = getProgressFor(reference);
   const fromVerse = progress?.remaining[0]?.from ?? 1;
   const lastVerse = progress?.verseCount ?? 1;
-  const endVerse = toVerse ?? lastVerse;
+  // A selection below `fromVerse` is stale: progress advanced past it while the sheet
+  // stayed open. Treat it as unset rather than building a reversed span — normalise
+  // would swap 11–10 into 10–11 and mark a verse read that never was. The setters
+  // that clear `toVerse` keep the label honest; this keeps the *data* safe even if a
+  // future path forgets one.
+  const endVerse = toVerse !== null && toVerse >= fromVerse ? toVerse : lastVerse;
   const span: VerseRange = { from: fromVerse, to: endVerse };
   const finishesChapter = endVerse >= lastVerse;
   const resuming = progress?.isPartial === true;
