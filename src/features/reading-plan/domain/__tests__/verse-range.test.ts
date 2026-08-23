@@ -69,6 +69,20 @@ describe('normaliseRanges', () => {
     expect(normaliseRanges([{ from: -5, to: 0 }], 31)).toEqual([]);
   });
 
+  it('drops a non-finite endpoint rather than clamping it', () => {
+    // Clamping first would turn these into the whole chapter and report it complete.
+    expect(normaliseRanges([{ from: Infinity, to: 1 }], 31)).toEqual([]);
+    expect(normaliseRanges([{ from: 1, to: Infinity }], 31)).toEqual([]);
+    expect(normaliseRanges([{ from: -Infinity, to: 5 }], 31)).toEqual([]);
+    expect(normaliseRanges([{ from: Number.NaN, to: 5 }], 31)).toEqual([]);
+  });
+
+  it('keeps valid ranges alongside rejected ones', () => {
+    expect(normaliseRanges([{ from: Infinity, to: 1 }, { from: 3, to: 8 }], 31)).toEqual([
+      { from: 3, to: 8 },
+    ]);
+  });
+
   it('truncates fractional verses', () => {
     expect(normaliseRanges([{ from: 1.7, to: 10.2 }], 31)).toEqual([{ from: 1, to: 10 }]);
   });
@@ -98,6 +112,11 @@ describe('isChapterComplete', () => {
   it('is false when the opening verses were skipped', () => {
     // Reaching the last verse is not enough — the span must start at verse 1.
     expect(isChapterComplete([{ from: 5, to: 31 }], 31)).toBe(false);
+  });
+
+  it('is not fooled into completeness by a non-finite endpoint', () => {
+    expect(isChapterComplete([{ from: Infinity, to: 1 }], 31)).toBe(false);
+    expect(isChapterComplete([{ from: 1, to: Infinity }], 31)).toBe(false);
   });
 
   it('is false for a single mid-chapter span that touches the end', () => {

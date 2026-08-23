@@ -19,9 +19,16 @@ export function normaliseRanges(
 ): readonly VerseRange[] {
   const clamped: VerseRange[] = [];
   for (const range of ranges) {
-    const from = Math.max(1, Math.min(Math.trunc(range.from), Math.trunc(range.to)));
-    const to = Math.min(verseCount, Math.max(Math.trunc(range.from), Math.trunc(range.to)));
-    if (Number.isFinite(from) && Number.isFinite(to) && to >= from) clamped.push({ from, to });
+    const start = Math.trunc(range.from);
+    const end = Math.trunc(range.to);
+    // Reject before clamping, not after. Clamping an infinite endpoint produces a
+    // finite one — `{ from: Infinity, to: 1 }` would widen to the whole chapter and
+    // report it complete, which is the worst possible way to fail.
+    if (!Number.isFinite(start) || !Number.isFinite(end)) continue;
+
+    const from = Math.max(1, Math.min(start, end));
+    const to = Math.min(verseCount, Math.max(start, end));
+    if (to >= from) clamped.push({ from, to });
   }
   return clamped.sort((a, b) => a.from - b.from || a.to - b.to);
 }
