@@ -9,7 +9,12 @@ import {
   type DateKey,
 } from '@/utils/date-key';
 
-import { getCompletedChapterKeys, getUnreadSequence, isCanonFullyRead, UNREAD_HORIZON } from './reading-position';
+import {
+  getCanonFinishedOn,
+  getCompletedChapterKeys,
+  getUnreadSequence,
+  isCanonFullyRead,
+} from './reading-position';
 import { distinctReferences } from './reference';
 import type { DayReading, ReadingCompletion, ReadingPlan, ReadingStatus, ScheduledReading } from './types';
 
@@ -56,33 +61,70 @@ export interface ScheduleContext {
    * while the days leading up to it still counted.
    */
   readonly canonFinishedOn: DateKey | null;
+  /** Chapters read in full, so slots past the cached queue can be derived on demand. */
+  readonly completedKeys: ReadonlySet<string>;
+  /** The plan governing today, whose canon and start reference define the queue. */
+  readonly activePlan: ReadingPlan | null;
+  readonly index: CanonIndex;
 }
 
 export function createScheduleContext(
   plans: readonly ReadingPlan[],
   completions: readonly ReadingCompletion[],
   today: DateKey = getTodayDateKey(),
-  index: CanonIndex = getCanonIndex(plans[0]?.canonId ?? 'protestant'),
+  /** Injectable for tests; otherwise taken from the plan that governs today. */
+  injectedIndex?: CanonIndex,
 ): ScheduleContext {
   const byDate = createCompletionLookup(completions);
+  // Resolve the plan first: the canon belongs to the plan in force now, not to
+  // whichever segment happens to be oldest.
   const active = resolvePlanForDate(plans, today) ?? plans[plans.length - 1] ?? null;
-  const completed = getCompletedChapterKeys(completions, index);
-  const finished = active !== null && isCanonFullyRead(active, completed, index);
+  const index = injectedIndex ?? getCanonIndex(active?.canonId ?? 'protestant');
 
-  let last: DateKey | null = null;
-  if (finished) {
-    for (const completion of completions) {
-      if (last === null || compareDateKeys(completion.localDate, last) > 0) last = completion.localDate;
-    }
-  }
+  const completed = getCompletedChapterKeys(completions, index);
+  const finished = active !== null && isCanonFullyRead(active, completed, index, completions);
 
   return {
     byDate,
-    unread: active === null ? [] : getUnreadSequence(active, completed, index),
+    unread: active === null ? [] : getUnreadSequence(active, completed, index, undefined, completions),
     today,
     todayRecorded: byDate.has(today),
-    canonFinishedOn: last,
+    canonFinishedOn: finished && active !== null ? getCanonFinishedOn(active, completions, index) : null,
+    completedKeys: completed,
+    activePlan: active,
+    index,
   };
+}
+
+/**
+ * The chapters at `slot` in the unread queue.
+ *
+ * The queue is cached only to the horizon, but the calendar pages forward without
+ * limit. Past the cache the walk continues from where it stopped rather than
+ * reporting the day as unscheduled — a plan with 789 chapters left must still show a
+ * reading two years out.
+ */
+function readUnreadSlot(context: ScheduleContext, slot: number, count: number): readonly BibleReference[] {
+  if (slot + count <= context.unread.length) return context.unread.slice(slot, slot + count);
+
+  const plan = context.activePlan;
+  const last = context.unread[context.unread.length - 1];
+  if (plan === null || last === undefined) return context.unread.slice(slot, slot + count);
+
+  const resumeFrom = context.index.toAbsoluteIndex(last);
+  if (resumeFrom === null) return context.unread.slice(slot, slot + count);
+
+  const extended = [...context.unread];
+  for (
+    let absolute = resumeFrom + 1;
+    absolute < context.index.totalChapters && extended.length < slot + count;
+    absolute += 1
+  ) {
+    const reference = context.index.fromAbsoluteIndex(absolute);
+    if (reference === null) break;
+    if (!context.completedKeys.has(`${reference.bookId}:${reference.chapter}`)) extended.push(reference);
+  }
+  return extended.slice(slot, slot + count);
 }
 
 /**
@@ -121,11 +163,9 @@ export function calculateReadingForDate(
   const slot = (daysAhead + (context.todayRecorded ? -1 : 0)) * plan.chaptersPerDay;
   if (slot < 0) return { kind: 'not-scheduled' };
 
-  const chapters = context.unread.slice(slot, slot + plan.chaptersPerDay);
-  if (chapters.length === 0) {
-    // Distinguish "read everything" from "further ahead than the queue was built".
-    return context.unread.length < UNREAD_HORIZON ? { kind: 'canon-complete' } : { kind: 'not-scheduled' };
-  }
+  const chapters = readUnreadSlot(context, slot, plan.chaptersPerDay);
+  // Empty now means the canon really is exhausted: the walk above runs to its end.
+  if (chapters.length === 0) return { kind: 'canon-complete' };
   return { kind: 'scheduled', chapters };
 }
 

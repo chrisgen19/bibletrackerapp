@@ -1,4 +1,5 @@
 import { PROTESTANT_CANON_INDEX } from '@/data/bible/canon-index';
+import { addDaysToDateKey } from '@/utils/date-key';
 
 import {
   calculateReadingForDate,
@@ -200,5 +201,67 @@ describe('getDayReading', () => {
   it('keeps a completion visible on a day no segment governs', () => {
     const rows = makeCompletions(['2026-07-26']);
     expect(getDayReading([plan], '2026-07-26', ctx([plan], rows)).status).toBe('completed');
+  });
+});
+
+describe('review fixes', () => {
+  it('keeps a chapter part-read behind the plan start at the head of the queue', () => {
+    // Regression: getUnreadSequence walks forward from the plan start, so a chapter
+    // part-read through the Custom tab sat behind it and was stepped over forever.
+    // Deleting the unfinished-chapter card removed the only other way to reach it.
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'EXO', startChapter: 1 });
+    const rows = [makeCompletion('2026-08-02', { bookId: 'GEN', chapter: 1, verses: { from: 1, to: 10 } })];
+    expect(chapters(calculateReadingForDate(plan, TODAY, ctx([plan], rows)))).toEqual(['GEN 1']);
+  });
+
+  it('does not offer a chapter that was part-read and then finished', () => {
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'EXO', startChapter: 1 });
+    const rows = [
+      makeCompletion('2026-08-02', { bookId: 'GEN', chapter: 1, verses: { from: 1, to: 10 } }),
+      makeCompletion('2026-08-03', { bookId: 'GEN', chapter: 1, verses: { from: 11, to: 31 } }),
+    ];
+    expect(chapters(calculateReadingForDate(plan, TODAY, ctx([plan], rows)))).toEqual(['EXO 1']);
+  });
+
+  it('does not let a later reread drag the canon finish date forward', () => {
+    // Regression: the finish date was the newest row in the database, so rereading
+    // Genesis 1 after finishing turned every day in between into a missed one.
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 22 });
+    const finish = makeCompletion('2026-08-02', { bookId: 'REV', chapter: 22 });
+    const reread = makeCompletion('2026-08-10', { bookId: 'GEN', chapter: 1 });
+
+    const before = ctx([plan], [finish]);
+    const after = ctx([plan], [finish, reread]);
+    expect(before.canonFinishedOn).toBe('2026-08-02');
+    expect(after.canonFinishedOn).toBe('2026-08-02');
+    expect(isScheduledDay([plan], '2026-08-05', after)).toBe(false);
+  });
+
+  it('takes the canon from the plan governing today, not the oldest segment', () => {
+    const old = makePlan({ id: 'old', startDate: '2026-01-01', endDate: '2026-06-30', isActive: false });
+    const current = makePlan({ id: 'current', startDate: '2026-07-01', endDate: null, isActive: true });
+    // No injected index: the context must pick the canon itself.
+    const context = createScheduleContext([old, current], [], TODAY);
+    expect(context.activePlan?.id).toBe('current');
+    expect(context.index.canon.id).toBe(current.canonId);
+  });
+
+  it('still schedules readings far beyond the cached queue', () => {
+    // The calendar pages forward without limit; the queue is only cached to 400.
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'GEN', startChapter: 1 });
+    const context = ctx([plan], []);
+    const farOff = addDaysToDateKey(TODAY, 500);
+    const reading = calculateReadingForDate(plan, farOff, context);
+    expect(reading.kind).toBe('scheduled');
+    // 500 days after today, one chapter a day from Genesis 1: absolute index 500.
+    expect(chapters(reading)).toEqual(['PSA 23']);
+  });
+
+  it('reports canon-complete past the end rather than an empty schedule', () => {
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 21 });
+    const context = ctx([plan], []);
+    // Two chapters left: Revelation 21 today, 22 tomorrow, nothing after.
+    expect(chapters(calculateReadingForDate(plan, addDaysToDateKey(TODAY, 1), context))).toEqual(['REV 22']);
+    expect(calculateReadingForDate(plan, addDaysToDateKey(TODAY, 2), context)).toEqual({ kind: 'canon-complete' });
   });
 });
