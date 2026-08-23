@@ -280,6 +280,52 @@ describe('DayDetail — custom tab', () => {
     });
   });
 
+  it('clears the verse selection after logging, as the plan tab does', async () => {
+    const { getByTestId, getByLabelText, queryByText } = await renderDetail(makeDay(), {
+      getProgressFor: () => progressFor([]),
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    expect(queryByText('Log 1–10 as Read')).not.toBeNull();
+
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    // A stale selection is how the reversed span below becomes reachable.
+    expect(queryByText('Log 1–10 as Read')).toBeNull();
+    expect(queryByText('Log as Read')).not.toBeNull();
+  });
+
+  it('never writes a reversed span after progress advances past the stale selection', async () => {
+    // The sheet stays open after logging, so progress refreshes underneath it:
+    // fromVerse moves to 11 while a stale toVerse of 10 remains, giving 11-10.
+    // normaliseRanges swaps that to 10-11 and marks verse 11 read unread.
+    let read: { from: number; to: number }[] = [];
+    const onComplete = jest.fn((_c: unknown, verses?: { from: number; to: number }) => {
+      if (verses !== undefined) read = [...read, verses];
+      return true;
+    });
+    const { getByTestId, getByLabelText, queryByText } = await renderDetail(makeDay(), {
+      onComplete,
+      getProgressFor: () => progressFor(read),
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 10'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    // Re-opening the picker re-renders against the refreshed progress.
+    await fireEvent.press(getByTestId('custom-field-to-verse'));
+    expect(queryByText('Log 11–10 as Read')).toBeNull();
+
+    await fireEvent.press(getByTestId('log-custom-reading'));
+    for (const span of onComplete.mock.calls.map((call) => call[1])) {
+      if (span !== undefined) expect(span.to).toBeGreaterThanOrEqual(span.from);
+    }
+  });
+
   it('does not offer to move the plan past verses that are still unread', async () => {
     // Regression: the continuation draft starts at the chapter *after* the one
     // logged. Offering it after a partial read would advance the plan to Genesis 22

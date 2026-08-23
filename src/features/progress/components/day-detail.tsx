@@ -356,6 +356,12 @@ function CustomPanel({
     // A failed write must not produce a success alert or a continuation offer.
     if (!onComplete([reference], canTrackVerses ? span : undefined)) return;
 
+    // The sheet stays open, so progress refreshes underneath it and `fromVerse`
+    // advances past a selection that is now stale. Keeping it would render — and
+    // then write — a reversed span such as 11–10, which normalises to 10–11 and
+    // marks a verse read that never was. Must precede the early return below.
+    setToVerse(null);
+
     // Continuation starts at the chapter *after* this one, so offering it while
     // verses remain unread would advance the plan straight past them. Only a
     // finished chapter may move the position; a partial read stays in the backlog.
