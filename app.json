@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Chapter",
+    "name": "Bible Daily",
     "slug": "chapter-bible-tracker",
     "scheme": "chapter",
     "version": "1.0.0",
@@ -17,7 +17,7 @@
     "android": {
       "package": "com.chapter.bibletracker",
       "adaptiveIcon": {
-        "backgroundColor": "#8C5A33",
+        "backgroundColor": "#FAECDD",
         "foregroundImage": "./assets/android-icon-foreground.png"
       },
       "predictiveBackGestureEnabled": false
