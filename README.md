@@ -1,4 +1,4 @@
-# Chapter
+# Bible Daily
 
 An offline-first daily Bible reading tracker for iOS. One chapter a day, tracked on a
 monthly calendar.
