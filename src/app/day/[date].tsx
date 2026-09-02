@@ -8,6 +8,7 @@ import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import { getCanonIndex } from '@/data/bible/canon-index';
 import { DayDetail } from '@/features/progress/components/day-detail';
 import { getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
+import { getChapterCompletionDate } from '@/features/reading-plan/domain/reading-position';
 import { getDayReading } from '@/features/reading-plan/domain/schedule';
 import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
@@ -24,8 +25,17 @@ export default function DayDetailScreen() {
     book?: string;
     chapter?: string;
   }>();
-  const { plans, completions, completionLookup, scheduleContext, today, completeReading, undoReading, changePlan } =
-    useReadingData();
+  const {
+    plans,
+    completions,
+    completionLookup,
+    scheduleContext,
+    today,
+    completeReading,
+    undoReading,
+    undoReadingEntry,
+    changePlan,
+  } = useReadingData();
 
   const isValid = typeof date === 'string' && isValidDateKey(date);
 
@@ -33,6 +43,20 @@ export default function DayDetailScreen() {
     () => (isValid ? getDayReading(plans, date, scheduleContext) : null),
     [isValid, date, plans, scheduleContext],
   );
+
+  /** The rows recorded on this day, so each can be described and removed on its own. */
+  const rows = useMemo(
+    () => (isValid ? completionLookup.get(date) ?? [] : []),
+    [isValid, date, completionLookup],
+  );
+
+  /**
+   * The chapter the reader is actually on: the head of the unread queue.
+   *
+   * A missed day schedules nothing, so without this the Custom tab and the catch-up
+   * action would fall back to Genesis 1 and quietly record the wrong chapter.
+   */
+  const currentPosition = scheduleContext.unread[0] ?? null;
 
   /**
    * Progress on the day's single scheduled chapter, across every day it was touched.
@@ -50,6 +74,16 @@ export default function DayDetailScreen() {
   const canonId = day?.plan?.canonId ?? 'protestant';
   const getProgressFor = useCallback(
     (reference: BibleReference) => getChapterProgress(completions, reference, getCanonIndex(canonId)),
+    [completions, canonId],
+  );
+
+  /**
+   * When a chapter was finished, so a control offered for an already-read chapter can
+   * say so instead of presenting itself as untouched.
+   */
+  const getCompletedOnFor = useCallback(
+    (reference: BibleReference) =>
+      getChapterCompletionDate(completions, reference, getCanonIndex(canonId)),
     [completions, canonId],
   );
 
@@ -81,6 +115,14 @@ export default function DayDetailScreen() {
     undoReading(day.date);
     undoHaptic();
   }, [day, undoReading]);
+
+  const handleUndoEntry = useCallback(
+    (id: string) => {
+      undoReadingEntry(id);
+      undoHaptic();
+    },
+    [undoReadingEntry],
+  );
 
   const handleChangePlan = useCallback(
     (draft: ReadingPlanDraft) => {
@@ -124,10 +166,14 @@ export default function DayDetailScreen() {
         today={today}
         onComplete={handleComplete}
         onUndo={handleUndo}
+        onUndoEntry={handleUndoEntry}
         onChangePlan={handleChangePlan}
         completions={completionLookup}
+        rows={rows}
         progress={progress}
         getProgressFor={getProgressFor}
+        getCompletedOnFor={getCompletedOnFor}
+        currentPosition={currentPosition}
         focusChapter={focusChapter}
       />
     </View>

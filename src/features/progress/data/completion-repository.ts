@@ -99,6 +99,17 @@ export function removeReadingCompletion(db: ReadingDatabase, localDate: DateKey)
   db.delete(readingCompletions).where(eq(readingCompletions.localDate, localDate)).run();
 }
 
+/**
+ * Removes a single recorded reading.
+ *
+ * A day can hold several rows — a multi-chapter plan, or one chapter finished across
+ * two sittings — and clearing the whole date to undo one mistaken entry would take
+ * the correct ones with it.
+ */
+export function removeCompletionById(db: ReadingDatabase, id: string): void {
+  db.delete(readingCompletions).where(eq(readingCompletions.id, id)).run();
+}
+
 export function countAllCompletions(db: ReadingDatabase): number {
   return db.select({ value: count() }).from(readingCompletions).get()?.value ?? 0;
 }

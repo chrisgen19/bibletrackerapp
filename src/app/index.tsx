@@ -9,6 +9,7 @@ import { getCanonIndex } from '@/data/bible/canon-index';
 import { CalendarSurface } from '@/features/progress/components/calendar-surface';
 import { StatRow } from '@/features/progress/components/stat-row';
 import { TodayReadingCard } from '@/features/progress/components/today-reading-card';
+import { UnfinishedList } from '@/features/progress/components/unfinished-list';
 import {
   addMonthsToMonthKey,
   monthKeyFromDateKey,
@@ -17,7 +18,11 @@ import {
 } from '@/features/progress/domain/calendar-month';
 import { useMonthWindow } from '@/features/progress/hooks/use-month-window';
 import { useStreaks } from '@/features/progress/hooks/use-streaks';
-import { countChaptersRead, getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
+import {
+  countChaptersRead,
+  getChapterProgress,
+  getUnfinishedChapters,
+} from '@/features/reading-plan/domain/chapter-progress';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { useTodayReading } from '@/features/reading-plan/hooks/use-today-reading';
 import { useTheme } from '@/theme/theme-provider';
@@ -36,6 +41,10 @@ export default function ProgressScreen() {
   const streaks = useStreaks();
 
   const currentMonthKey = useMemo(() => monthKeyFromDateKey(today), [today]);
+  const canonIndex = useMemo(
+    () => getCanonIndex(activePlan?.canonId ?? 'protestant'),
+    [activePlan],
+  );
 
   /** Progress on today's chapter, so the card can show what is left to read. */
   const todayProgress = useMemo(() => {
@@ -43,13 +52,33 @@ export default function ProgressScreen() {
     const chapter =
       todayReading.scheduled.chapters.length === 1 ? todayReading.scheduled.chapters[0] : undefined;
     if (chapter === undefined) return null;
-    return getChapterProgress(completions, chapter, getCanonIndex(activePlan?.canonId ?? 'protestant'));
-  }, [todayReading.scheduled, completions, activePlan]);
+    return getChapterProgress(completions, chapter, canonIndex);
+  }, [todayReading.scheduled, completions, canonIndex]);
+
+  /**
+   * Chapters left half-read, minus the one today's card is already showing.
+   *
+   * Keyed off `todayProgress` rather than the scheduled chapters: the card only
+   * offers "Continue Reading" when it has progress for a single chapter, so
+   * excluding every scheduled chapter hid partial ones on a multi-chapter day —
+   * a day with two chapters logged against it, which is exactly the shape this
+   * list exists to surface.
+   */
+  const unfinished = useMemo(() => {
+    const shownToday =
+      todayProgress?.isPartial === true
+        ? `${todayProgress.reference.bookId}:${todayProgress.reference.chapter}`
+        : null;
+    return getUnfinishedChapters(completions, canonIndex).filter(
+      (progress) =>
+        `${progress.reference.bookId}:${progress.reference.chapter}` !== shownToday,
+    );
+  }, [completions, canonIndex, todayProgress]);
 
   /** Chapters finished, not completion rows — a chapter read in two sittings is one. */
   const chaptersRead = useMemo(
-    () => countChaptersRead(completions, getCanonIndex(activePlan?.canonId ?? 'protestant')),
-    [completions, activePlan],
+    () => countChaptersRead(completions, canonIndex),
+    [completions, canonIndex],
   );
   const isViewingCurrentMonth = monthKeysEqual(monthKey, currentMonthKey);
 
@@ -116,6 +145,20 @@ export default function ProgressScreen() {
             progress={todayProgress}
           />
         </View>
+
+        {unfinished.length > 0 ? (
+          <View style={{ marginTop: theme.spacing.xxl }}>
+            <UnfinishedList
+              chapters={unfinished}
+              index={canonIndex}
+              onSelect={(reference) =>
+                router.push(
+                  `/day/${today}?book=${reference.bookId}&chapter=${reference.chapter}`,
+                )
+              }
+            />
+          </View>
+        ) : null}
 
         <View style={{ marginTop: theme.spacing.md }}>
           <StatRow

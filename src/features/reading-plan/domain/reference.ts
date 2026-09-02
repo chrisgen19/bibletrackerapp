@@ -105,6 +105,11 @@ export function formatReferenceShort(
   return `${book?.abbreviation ?? reference.bookId} ${reference.chapter}`;
 }
 
+/** True when two references name the same book and chapter. */
+export function isSameReference(a: BibleReference, b: BibleReference): boolean {
+  return a.bookId === b.bookId && a.chapter === b.chapter;
+}
+
 /**
  * Removes duplicate references, preserving order.
  *

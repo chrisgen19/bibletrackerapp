@@ -3,7 +3,7 @@ import { Alert } from 'react-native';
 import { makePlan } from '@/features/reading-plan/domain/__tests__/fixtures';
 import type { ChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
 import { createCompletionLookup } from '@/features/reading-plan/domain/schedule';
-import type { DayReading } from '@/features/reading-plan/domain/types';
+import type { DayReading, ReadingCompletion } from '@/features/reading-plan/domain/types';
 import { fireEvent, renderWithTheme } from '@/test-utils/render';
 
 import { DayDetail } from '../day-detail';
@@ -21,9 +21,23 @@ function makeDay(overrides: Partial<DayReading> = {}): DayReading {
   };
 }
 
+/** One row per recorded chapter, which is what the sheet actually renders from. */
+function rowsFor(day: DayReading): ReadingCompletion[] {
+  return day.completedChapters.map((reference, position) => ({
+    id: `row-${position}`,
+    readingPlanId: 'plan-1',
+    localDate: day.date,
+    bookId: reference.bookId,
+    chapter: reference.chapter,
+    verses: null,
+    completedAt: 0,
+  }));
+}
+
 async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof DayDetail>[0]> = {}) {
   const onComplete = handlers.onComplete ?? jest.fn(() => true);
   const onUndo = handlers.onUndo ?? jest.fn();
+  const onUndoEntry = handlers.onUndoEntry ?? jest.fn();
   const onChangePlan = handlers.onChangePlan ?? jest.fn();
   const queries = await renderWithTheme(
     <DayDetail
@@ -31,14 +45,18 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       today={handlers.today ?? TODAY}
       onComplete={onComplete}
       onUndo={onUndo}
+      onUndoEntry={onUndoEntry}
       onChangePlan={onChangePlan}
       completions={handlers.completions ?? createCompletionLookup([])}
+      rows={handlers.rows ?? rowsFor(day)}
       progress={handlers.progress ?? null}
       getProgressFor={handlers.getProgressFor ?? (() => null)}
+      getCompletedOnFor={handlers.getCompletedOnFor ?? (() => null)}
+      currentPosition={handlers.currentPosition ?? null}
       focusChapter={handlers.focusChapter ?? null}
     />,
   );
-  return { onComplete, onUndo, onChangePlan, ...queries };
+  return { onComplete, onUndo, onUndoEntry, onChangePlan, ...queries };
 }
 
 /** Invokes the nth button of the most recent Alert.alert call. */
@@ -142,7 +160,7 @@ describe('DayDetail — partial chapters', () => {
       makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] }),
       { progress: progressFor([{ from: 1, to: 10 }]) },
     );
-    expect(getByText('Read 1–10 · 11–34 to go')).toBeTruthy();
+    expect(getByText('You’ve read verses 1–10. Verses 11–34 still to go.')).toBeTruthy();
   });
 
   it('still offers to continue when the day is marked but the chapter is not finished', async () => {
@@ -288,13 +306,13 @@ describe('DayDetail — custom tab', () => {
     await fireEvent.press(getByTestId('day-tab-custom'));
     await fireEvent.press(getByTestId('custom-field-to-verse'));
     await fireEvent.press(getByLabelText('To verse 10'));
-    expect(queryByText('Log 1–10 as Read')).not.toBeNull();
+    expect(queryByText('Log Genesis 21:1–10 as Read')).not.toBeNull();
 
     await fireEvent.press(getByTestId('log-custom-reading'));
 
     // A stale selection is how the reversed span below becomes reachable.
-    expect(queryByText('Log 1–10 as Read')).toBeNull();
-    expect(queryByText('Log as Read')).not.toBeNull();
+    expect(queryByText('Log Genesis 21:1–10 as Read')).toBeNull();
+    expect(queryByText('Log Genesis 21 as Read')).not.toBeNull();
   });
 
   it('never writes a reversed span after progress advances past the stale selection', async () => {
@@ -318,7 +336,7 @@ describe('DayDetail — custom tab', () => {
 
     // Re-opening the picker re-renders against the refreshed progress.
     await fireEvent.press(getByTestId('custom-field-to-verse'));
-    expect(queryByText('Log 11–10 as Read')).toBeNull();
+    expect(queryByText('Log Genesis 21:11–10 as Read')).toBeNull();
 
     await fireEvent.press(getByTestId('log-custom-reading'));
     for (const span of onComplete.mock.calls.map((call) => call[1])) {
@@ -427,8 +445,258 @@ describe('DayDetail — a day that passed unread', () => {
       completedChapters: [],
     });
     return renderDetail(day, { today: TODAY }).then(({ getByText, queryByText }) => {
-      expect(getByText(/Your place in the plan is unchanged/)).toBeTruthy();
+      expect(getByText(/your place in the plan moves as you read/)).toBeTruthy();
       expect(queryByText(/hadn’t started yet/)).toBeNull();
     });
+  });
+});
+
+describe('DayDetail — catching up on a missed day', () => {
+  const LEVITICUS_6 = { bookId: 'LEV', chapter: 6 };
+
+  /** Leviticus 6 has 30 verses. */
+  function leviticusProgress(read: { from: number; to: number }[]): ChapterProgress {
+    const verseCount = 30;
+    const remaining: { from: number; to: number }[] = [];
+    let cursor = 1;
+    for (const r of read) {
+      if (r.from > cursor) remaining.push({ from: cursor, to: r.from - 1 });
+      cursor = Math.max(cursor, r.to + 1);
+    }
+    if (cursor <= verseCount) remaining.push({ from: cursor, to: verseCount });
+    return {
+      reference: LEVITICUS_6,
+      verseCount,
+      read,
+      remaining,
+      isComplete: remaining.length === 0,
+      isPartial: read.length > 0 && remaining.length > 0,
+    };
+  }
+
+  function missedDay() {
+    return makeDay({
+      date: '2026-08-05',
+      status: 'missed',
+      scheduled: { kind: 'not-scheduled' },
+      completedChapters: [],
+    });
+  }
+
+  it('seeds the custom tab from the reading position, not Genesis 1', async () => {
+    // The regression. A missed day schedules nothing, so both fallbacks used to
+    // land on `index.firstReference`. Setting only the verse then recorded
+    // Genesis 1 against a day the reader had spent in Leviticus.
+    const { getByTestId, getByText, onComplete } = await renderDetail(missedDay(), {
+      currentPosition: LEVITICUS_6,
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('Leviticus')).toBeTruthy();
+    expect(getByText('6')).toBeTruthy();
+
+    await fireEvent.press(getByTestId('log-custom-reading'));
+    expect(onComplete).toHaveBeenCalledWith([LEVITICUS_6], undefined);
+  });
+
+  it('falls back to Genesis 1 only when there is no position at all', async () => {
+    const { getByTestId, onComplete } = await renderDetail(missedDay(), {
+      currentPosition: null,
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 1 }], undefined);
+  });
+
+  it('offers the catch-up without leaving the plan tab', async () => {
+    const { getByTestId, getByText, getByLabelText, onComplete } = await renderDetail(missedDay(), {
+      currentPosition: LEVITICUS_6,
+      getProgressFor: () => leviticusProgress([]),
+    });
+
+    expect(getByText(/your place in the plan moves as you read/)).toBeTruthy();
+    expect(getByText('Mark Leviticus 6 as Read')).toBeTruthy();
+
+    await fireEvent.press(getByTestId('catch-up-field-to-verse'));
+    await fireEvent.press(getByLabelText('To verse 7'));
+    await fireEvent.press(getByTestId('catch-up-submit'));
+
+    expect(onComplete).toHaveBeenCalledWith([LEVITICUS_6], { from: 1, to: 7 });
+  });
+
+  it('does not offer a catch-up on a day before the plan began', async () => {
+    const { queryByTestId, getByText } = await renderDetail(
+      makeDay({ date: '2026-07-01', status: 'before-plan', scheduled: { kind: 'before-plan' }, plan: null }),
+      { currentPosition: LEVITICUS_6, getProgressFor: () => leviticusProgress([]) },
+    );
+
+    expect(queryByTestId('catch-up-submit')).toBeNull();
+    expect(getByText('You can still record what you read using the Custom tab.')).toBeTruthy();
+  });
+
+  it('does not ask to move the plan when logging the chapter already at the head', async () => {
+    // The queue steps over finished chapters by itself, so there is nothing to move.
+    // Accepting the prompt would rewrite the plan start and drop every chapter still
+    // unread before it.
+    const { getByTestId, onChangePlan } = await renderDetail(
+      makeDay({ scheduled: { kind: 'scheduled', chapters: [{ bookId: 'GEN', chapter: 21 }] } }),
+      { currentPosition: { bookId: 'GEN', chapter: 21 } },
+    );
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(onChangePlan).not.toHaveBeenCalled();
+  });
+});
+
+describe('DayDetail — a chapter that is already finished', () => {
+  const complete = progressFor([{ from: 1, to: 34 }]);
+
+  it('says so instead of offering it as a fresh reading', async () => {
+    // A finished chapter leaves `remaining` empty, so fromVerse fell back to 1 and
+    // the control read exactly like an untouched chapter: "Log Genesis 21 as Read".
+    const { getByText, queryByText, getByTestId } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => '2026-08-07',
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('Genesis 21 is already fully read — completed on 7 August.')).toBeTruthy();
+    expect(getByText('Log Genesis 21 Again')).toBeTruthy();
+    expect(queryByText('Log Genesis 21 as Read')).toBeNull();
+  });
+
+  it('distinguishes a chapter recorded on the day being viewed', async () => {
+    const { getByText, getByTestId } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => TODAY,
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('Genesis 21 is already recorded on this day.')).toBeTruthy();
+  });
+
+  it('drops the "finishes the chapter" wording for something already finished', async () => {
+    const { getByText, queryByText, getByTestId } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => '2026-08-07',
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('34 (whole chapter)')).toBeTruthy();
+    expect(queryByText('34 (finishes the chapter)')).toBeNull();
+    expect(queryByText(/Stopping early/)).toBeNull();
+  });
+
+  it('still records when the reader really means to log it again', async () => {
+    const { getByTestId, onComplete } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => '2026-08-07',
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 1, to: 34 });
+  });
+});
+
+describe('DayDetail — removing a mistaken reading', () => {
+  it('offers removal even while the chapter is unfinished', async () => {
+    // The reader who logged the wrong chapter for half a chapter had no way back:
+    // the calendar showed the day complete while the sheet only offered to read on.
+    const { getByTestId, onUndo } = await renderDetail(
+      makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] }),
+      { progress: progressFor([{ from: 1, to: 10 }]) },
+    );
+
+    expect(getByTestId('mark-day-read')).toBeTruthy();
+    await fireEvent.press(getByTestId('undo-completion'));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not claim a part-read chapter is completed', async () => {
+    // The label used to come from the *scheduled* chapter's progress, so a day
+    // holding a half-read chapter showed a checkmark and "completed".
+    const day = makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] });
+    const partial = progressFor([{ from: 1, to: 10 }]);
+    const { getByText, queryByText } = await renderDetail(day, {
+      rows: [
+        {
+          id: 'row-0',
+          readingPlanId: 'plan-1',
+          localDate: day.date,
+          bookId: 'GEN',
+          chapter: 21,
+          verses: { from: 1, to: 10 },
+          completedAt: 0,
+        },
+      ],
+      progress: partial,
+      getProgressFor: () => partial,
+    });
+
+    expect(getByText('Genesis 21:1–10 recorded')).toBeTruthy();
+    expect(queryByText('Genesis 21 completed')).toBeNull();
+  });
+
+  it('reads completion from the rows when a day holds two chapters', async () => {
+    // A two-chapter day has no single `progress`, which used to resolve to
+    // "complete" and label an unfinished pair as done.
+    const day = makeDay({
+      status: 'completed',
+      completedChapters: [
+        { bookId: 'GEN', chapter: 21 },
+        { bookId: 'LEV', chapter: 6 },
+      ],
+    });
+    const partial = progressFor([{ from: 1, to: 10 }]);
+    const { queryByText } = await renderDetail(day, {
+      progress: null,
+      getProgressFor: (reference) => (reference.bookId === 'GEN' ? partial : null),
+    });
+
+    expect(queryByText(/completed/)).toBeNull();
+  });
+
+  it('labels a part-read chapter honestly on a day before the plan began', async () => {
+    // UnscheduledPanel passed `isComplete` as a constant. A before-plan day is the
+    // one place that panel still renders with rows.
+    const partial = progressFor([{ from: 1, to: 10 }]);
+    const { queryByText } = await renderDetail(
+      makeDay({
+        date: '2026-07-01',
+        status: 'completed',
+        scheduled: { kind: 'before-plan' },
+        plan: null,
+        completedChapters: [{ bookId: 'GEN', chapter: 21 }],
+      }),
+      { getProgressFor: () => partial },
+    );
+
+    expect(queryByText('Genesis 21 completed')).toBeNull();
+  });
+
+  it('removes a single entry from a day holding several', async () => {
+    const day = makeDay({
+      status: 'completed',
+      completedChapters: [
+        { bookId: 'GEN', chapter: 1 },
+        { bookId: 'LEV', chapter: 6 },
+      ],
+    });
+    const { getByTestId, onUndoEntry } = await renderDetail(day);
+
+    await fireEvent.press(getByTestId('remove-entry-row-0'));
+
+    expect(onUndoEntry).toHaveBeenCalledWith('row-0');
   });
 });

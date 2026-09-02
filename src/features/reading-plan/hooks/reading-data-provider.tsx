@@ -15,6 +15,7 @@ import { useDatabase } from '@/db/database-provider';
 import {
   getAllCompletions,
   markReadingComplete,
+  removeCompletionById,
   removeReadingCompletion,
 } from '@/features/progress/data/completion-repository';
 import {
@@ -71,6 +72,8 @@ interface ReadingDataValue {
     verses?: VerseRange,
   ) => boolean;
   undoReading: (date: DateKey) => void;
+  /** Removes one recorded reading, leaving the rest of that day intact. */
+  undoReadingEntry: (id: string) => void;
   resetProgress: () => void;
 }
 
@@ -161,6 +164,14 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
     [db, refresh],
   );
 
+  const undoReadingEntry = useCallback(
+    (id: string) => {
+      removeCompletionById(db, id);
+      refresh();
+    },
+    [db, refresh],
+  );
+
   const resetProgress = useCallback(() => {
     resetAllProgress(db);
     refresh();
@@ -179,9 +190,19 @@ export function ReadingDataProvider({ children }: { children: ReactNode }) {
       changePlan,
       completeReading,
       undoReading,
+      undoReadingEntry,
       resetProgress,
     }),
-    [snapshot, today, startPlan, changePlan, completeReading, undoReading, resetProgress],
+    [
+      snapshot,
+      today,
+      startPlan,
+      changePlan,
+      completeReading,
+      undoReading,
+      undoReadingEntry,
+      resetProgress,
+    ],
   );
 
   return <ReadingDataContext.Provider value={value}>{children}</ReadingDataContext.Provider>;

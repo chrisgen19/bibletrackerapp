@@ -9,6 +9,7 @@ import {
   getNextChapter,
   getPreviousChapter,
   getRemainingChapterCount,
+  isSameReference,
   isValidReference,
 } from '../reference';
 
@@ -179,5 +180,14 @@ describe('validation and formatting', () => {
         { bookId: 'EXO', chapter: 1 },
       ]),
     ).toBe('Genesis 50 – Exodus 1');
+  });
+});
+
+describe('isSameReference', () => {
+  it('matches on book and chapter together', () => {
+    expect(isSameReference({ bookId: 'LEV', chapter: 6 }, { bookId: 'LEV', chapter: 6 })).toBe(true);
+    expect(isSameReference({ bookId: 'LEV', chapter: 6 }, { bookId: 'LEV', chapter: 7 })).toBe(false);
+    // The chapter number alone is not enough: every book has a chapter 6.
+    expect(isSameReference({ bookId: 'LEV', chapter: 6 }, { bookId: 'GEN', chapter: 6 })).toBe(false);
   });
 });
