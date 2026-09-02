@@ -60,6 +60,9 @@ interface DayDetailProps {
   progress: ChapterProgress | null;
   /** Progress for any chapter, so the Custom tab can resume an unfinished one. */
   getProgressFor: (reference: BibleReference) => ChapterProgress | null;
+  /** When a chapter was finished, so an already-read one can say so rather than
+   * presenting itself as untouched. */
+  getCompletedOnFor: (reference: BibleReference) => DateKey | null;
   /**
    * The chapter the reader is actually on — the head of the unread queue.
    *
@@ -83,6 +86,7 @@ export function DayDetail({
   rows,
   progress,
   getProgressFor,
+  getCompletedOnFor,
   currentPosition,
   focusChapter = null,
 }: DayDetailProps) {
@@ -118,6 +122,7 @@ export function DayDetail({
           rows={rows}
           progress={progress}
           getProgressFor={getProgressFor}
+          getCompletedOnFor={getCompletedOnFor}
           currentPosition={currentPosition}
         />
       ) : (
@@ -128,6 +133,7 @@ export function DayDetail({
           onChangePlan={onChangePlan}
           completions={completions}
           getProgressFor={getProgressFor}
+          getCompletedOnFor={getCompletedOnFor}
           currentPosition={currentPosition}
           focusChapter={focusChapter}
         />
@@ -161,6 +167,7 @@ interface PlanPanelProps {
   rows: readonly ReadingCompletion[];
   progress: ChapterProgress | null;
   getProgressFor: (reference: BibleReference) => ChapterProgress | null;
+  getCompletedOnFor: (reference: BibleReference) => DateKey | null;
   currentPosition: BibleReference | null;
 }
 
@@ -173,6 +180,7 @@ function PlanPanel({
   rows,
   progress,
   getProgressFor,
+  getCompletedOnFor,
   currentPosition,
 }: PlanPanelProps) {
   const theme = useTheme();
@@ -190,6 +198,7 @@ function PlanPanel({
         onUndo={onUndo}
         onUndoEntry={onUndoEntry}
         getProgressFor={getProgressFor}
+        getCompletedOnFor={getCompletedOnFor}
         currentPosition={currentPosition}
         reducedMotion={reducedMotion}
       />
@@ -270,6 +279,8 @@ function PlanPanel({
               index={index}
               verb="Mark"
               onSubmit={(span) => onComplete([tracked], span)}
+              getCompletedOnFor={getCompletedOnFor}
+              viewedDate={day.date}
               fieldTestID="field-to-verse"
               submitTestID="mark-day-read"
             />
@@ -295,6 +306,7 @@ interface UnscheduledPanelProps {
   onUndo: () => void;
   onUndoEntry: (id: string) => void;
   getProgressFor: (reference: BibleReference) => ChapterProgress | null;
+  getCompletedOnFor: (reference: BibleReference) => DateKey | null;
   currentPosition: BibleReference | null;
   reducedMotion: boolean;
 }
@@ -315,6 +327,7 @@ function UnscheduledPanel({
   onUndo,
   onUndoEntry,
   getProgressFor,
+  getCompletedOnFor,
   currentPosition,
   reducedMotion,
 }: UnscheduledPanelProps) {
@@ -359,6 +372,8 @@ function UnscheduledPanel({
             index={index}
             verb="Mark"
             onSubmit={(span) => onComplete([currentPosition], span)}
+            getCompletedOnFor={getCompletedOnFor}
+            viewedDate={day.date}
             fieldTestID="catch-up-field-to-verse"
             submitTestID="catch-up-submit"
           />
@@ -379,6 +394,7 @@ interface CustomPanelProps {
   onChangePlan: (draft: ReadingPlanDraft) => void;
   completions: CompletionLookup;
   getProgressFor: (reference: BibleReference) => ChapterProgress | null;
+  getCompletedOnFor: (reference: BibleReference) => DateKey | null;
   currentPosition: BibleReference | null;
   focusChapter: BibleReference | null;
 }
@@ -397,6 +413,7 @@ function CustomPanel({
   onChangePlan,
   completions,
   getProgressFor,
+  getCompletedOnFor,
   currentPosition,
   focusChapter,
 }: CustomPanelProps) {
@@ -536,6 +553,8 @@ function CustomPanel({
             index={index}
             verb="Log"
             onSubmit={(span) => handleLog(span)}
+            getCompletedOnFor={getCompletedOnFor}
+            viewedDate={day.date}
             fieldTestID="custom-field-to-verse"
             submitTestID="log-custom-reading"
           />
@@ -576,6 +595,9 @@ interface VerseControlProps {
   verb: 'Mark' | 'Log';
   /** Returns false when the write failed, so a stale selection is not cleared. */
   onSubmit: (span: VerseRange) => boolean;
+  getCompletedOnFor: (reference: BibleReference) => DateKey | null;
+  /** The day being viewed, to tell "recorded here" from "read on another day". */
+  viewedDate: DateKey;
   fieldTestID: string;
   submitTestID: string;
 }
@@ -593,6 +615,8 @@ function VerseControl({
   index,
   verb,
   onSubmit,
+  getCompletedOnFor,
+  viewedDate,
   fieldTestID,
   submitTestID,
 }: VerseControlProps) {
@@ -610,38 +634,81 @@ function VerseControl({
   const finishesChapter = endVerse >= lastVerse;
   const chapterLabel = formatReference(reference, index);
 
+  // A finished chapter leaves `remaining` empty, so `fromVerse` falls back to 1 and
+  // the control would otherwise present it as untouched — same field, same label,
+  // no hint that logging again adds a second row and inflates the streak.
+  const completedOn = progress.isComplete ? getCompletedOnFor(reference) : null;
+  const alreadyHere = completedOn !== null && completedOn === viewedDate;
+
   return (
     <View>
       <View style={{ marginBottom: theme.spacing.md }}>
         <Card padded={false}>
           <FieldRow
             label="Read up to verse"
-            value={finishesChapter ? `${lastVerse} (finishes the chapter)` : String(endVerse)}
+            value={
+              progress.isComplete
+                ? `${lastVerse} (whole chapter)`
+                : finishesChapter
+                  ? `${lastVerse} (finishes the chapter)`
+                  : String(endVerse)
+            }
             onPress={() => setPickerOpen(true)}
             last
             testID={fieldTestID}
           />
         </Card>
-        <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
-          {finishesChapter
-            ? 'Stopping early? Set how far you got and finish the rest another day.'
-            : `Recording verses ${formatVerseRange(span)}. Verses ${formatVerseRange({
-                from: endVerse + 1,
-                to: lastVerse,
-              })} stay waiting for you.`}
-        </Text>
+        {progress.isComplete ? null : (
+          <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
+            {finishesChapter
+              ? 'Stopping early? Set how far you got and finish the rest another day.'
+              : `Recording verses ${formatVerseRange(span)}. Verses ${formatVerseRange({
+                  from: endVerse + 1,
+                  to: lastVerse,
+                })} stay waiting for you.`}
+          </Text>
+        )}
       </View>
+
+      {progress.isComplete ? (
+        <View
+          style={{
+            marginBottom: theme.spacing.md,
+            padding: theme.spacing.lg,
+            borderRadius: theme.radius.lg,
+            backgroundColor: theme.colors.accentSoft,
+          }}
+        >
+          <Text variant="footnote" color="accent" testID={`${submitTestID}-already-read`}>
+            {alreadyHere
+              ? `${chapterLabel} is already recorded on this day.`
+              : completedOn === null
+                ? `${chapterLabel} is already fully read.`
+                : `${chapterLabel} is already fully read — completed on ${format(
+                    fromDateKey(completedOn),
+                    'd MMMM',
+                  )}.`}
+          </Text>
+        </View>
+      ) : null}
 
       <Button
         label={
-          finishesChapter && fromVerse === 1
-            ? `${verb} ${chapterLabel} as Read`
-            : `${verb} ${chapterLabel}:${formatVerseRange(span)} as Read`
+          progress.isComplete
+            ? `${verb} ${chapterLabel} Again`
+            : finishesChapter && fromVerse === 1
+              ? `${verb} ${chapterLabel} as Read`
+              : `${verb} ${chapterLabel}:${formatVerseRange(span)} as Read`
         }
+        variant={progress.isComplete ? 'secondary' : 'primary'}
         onPress={() => {
           if (onSubmit(span)) setToVerse(null);
         }}
-        accessibilityHint={`Records ${chapterLabel} verses ${formatVerseRange(span)} as read`}
+        accessibilityHint={
+          progress.isComplete
+            ? `Records ${chapterLabel} again for this day, in addition to the reading already logged`
+            : `Records ${chapterLabel} verses ${formatVerseRange(span)} as read`
+        }
         testID={submitTestID}
       />
 

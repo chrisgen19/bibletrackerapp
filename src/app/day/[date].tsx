@@ -8,6 +8,7 @@ import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import { getCanonIndex } from '@/data/bible/canon-index';
 import { DayDetail } from '@/features/progress/components/day-detail';
 import { getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
+import { getChapterCompletionDate } from '@/features/reading-plan/domain/reading-position';
 import { getDayReading } from '@/features/reading-plan/domain/schedule';
 import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
@@ -73,6 +74,16 @@ export default function DayDetailScreen() {
   const canonId = day?.plan?.canonId ?? 'protestant';
   const getProgressFor = useCallback(
     (reference: BibleReference) => getChapterProgress(completions, reference, getCanonIndex(canonId)),
+    [completions, canonId],
+  );
+
+  /**
+   * When a chapter was finished, so a control offered for an already-read chapter can
+   * say so instead of presenting itself as untouched.
+   */
+  const getCompletedOnFor = useCallback(
+    (reference: BibleReference) =>
+      getChapterCompletionDate(completions, reference, getCanonIndex(canonId)),
     [completions, canonId],
   );
 
@@ -161,6 +172,7 @@ export default function DayDetailScreen() {
         rows={rows}
         progress={progress}
         getProgressFor={getProgressFor}
+        getCompletedOnFor={getCompletedOnFor}
         currentPosition={currentPosition}
         focusChapter={focusChapter}
       />

@@ -51,6 +51,7 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       rows={handlers.rows ?? rowsFor(day)}
       progress={handlers.progress ?? null}
       getProgressFor={handlers.getProgressFor ?? (() => null)}
+      getCompletedOnFor={handlers.getCompletedOnFor ?? (() => null)}
       currentPosition={handlers.currentPosition ?? null}
       focusChapter={handlers.focusChapter ?? null}
     />,
@@ -550,6 +551,61 @@ describe('DayDetail — catching up on a missed day', () => {
 
     expect(Alert.alert).not.toHaveBeenCalled();
     expect(onChangePlan).not.toHaveBeenCalled();
+  });
+});
+
+describe('DayDetail — a chapter that is already finished', () => {
+  const complete = progressFor([{ from: 1, to: 34 }]);
+
+  it('says so instead of offering it as a fresh reading', async () => {
+    // A finished chapter leaves `remaining` empty, so fromVerse fell back to 1 and
+    // the control read exactly like an untouched chapter: "Log Genesis 21 as Read".
+    const { getByText, queryByText, getByTestId } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => '2026-08-07',
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('Genesis 21 is already fully read — completed on 7 August.')).toBeTruthy();
+    expect(getByText('Log Genesis 21 Again')).toBeTruthy();
+    expect(queryByText('Log Genesis 21 as Read')).toBeNull();
+  });
+
+  it('distinguishes a chapter recorded on the day being viewed', async () => {
+    const { getByText, getByTestId } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => TODAY,
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('Genesis 21 is already recorded on this day.')).toBeTruthy();
+  });
+
+  it('drops the "finishes the chapter" wording for something already finished', async () => {
+    const { getByText, queryByText, getByTestId } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => '2026-08-07',
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+
+    expect(getByText('34 (whole chapter)')).toBeTruthy();
+    expect(queryByText('34 (finishes the chapter)')).toBeNull();
+    expect(queryByText(/Stopping early/)).toBeNull();
+  });
+
+  it('still records when the reader really means to log it again', async () => {
+    const { getByTestId, onComplete } = await renderDetail(makeDay(), {
+      getProgressFor: () => complete,
+      getCompletedOnFor: () => '2026-08-07',
+    });
+
+    await fireEvent.press(getByTestId('day-tab-custom'));
+    await fireEvent.press(getByTestId('log-custom-reading'));
+
+    expect(onComplete).toHaveBeenCalledWith([{ bookId: 'GEN', chapter: 21 }], { from: 1, to: 34 });
   });
 });
 
