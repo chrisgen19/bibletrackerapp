@@ -567,6 +567,68 @@ describe('DayDetail — removing a mistaken reading', () => {
     expect(onUndo).toHaveBeenCalledTimes(1);
   });
 
+  it('does not claim a part-read chapter is completed', async () => {
+    // The label used to come from the *scheduled* chapter's progress, so a day
+    // holding a half-read chapter showed a checkmark and "completed".
+    const day = makeDay({ status: 'completed', completedChapters: [{ bookId: 'GEN', chapter: 21 }] });
+    const partial = progressFor([{ from: 1, to: 10 }]);
+    const { getByText, queryByText } = await renderDetail(day, {
+      rows: [
+        {
+          id: 'row-0',
+          readingPlanId: 'plan-1',
+          localDate: day.date,
+          bookId: 'GEN',
+          chapter: 21,
+          verses: { from: 1, to: 10 },
+          completedAt: 0,
+        },
+      ],
+      progress: partial,
+      getProgressFor: () => partial,
+    });
+
+    expect(getByText('Genesis 21:1–10 recorded')).toBeTruthy();
+    expect(queryByText('Genesis 21 completed')).toBeNull();
+  });
+
+  it('reads completion from the rows when a day holds two chapters', async () => {
+    // A two-chapter day has no single `progress`, which used to resolve to
+    // "complete" and label an unfinished pair as done.
+    const day = makeDay({
+      status: 'completed',
+      completedChapters: [
+        { bookId: 'GEN', chapter: 21 },
+        { bookId: 'LEV', chapter: 6 },
+      ],
+    });
+    const partial = progressFor([{ from: 1, to: 10 }]);
+    const { queryByText } = await renderDetail(day, {
+      progress: null,
+      getProgressFor: (reference) => (reference.bookId === 'GEN' ? partial : null),
+    });
+
+    expect(queryByText(/completed/)).toBeNull();
+  });
+
+  it('labels a part-read chapter honestly on a day before the plan began', async () => {
+    // UnscheduledPanel passed `isComplete` as a constant. A before-plan day is the
+    // one place that panel still renders with rows.
+    const partial = progressFor([{ from: 1, to: 10 }]);
+    const { queryByText } = await renderDetail(
+      makeDay({
+        date: '2026-07-01',
+        status: 'completed',
+        scheduled: { kind: 'before-plan' },
+        plan: null,
+        completedChapters: [{ bookId: 'GEN', chapter: 21 }],
+      }),
+      { getProgressFor: () => partial },
+    );
+
+    expect(queryByText('Genesis 21 completed')).toBeNull();
+  });
+
   it('removes a single entry from a day holding several', async () => {
     const day = makeDay({
       status: 'completed',

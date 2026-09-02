@@ -56,22 +56,24 @@ export default function ProgressScreen() {
   }, [todayReading.scheduled, completions, canonIndex]);
 
   /**
-   * Chapters left half-read, minus whatever today's card is already showing.
+   * Chapters left half-read, minus the one today's card is already showing.
    *
-   * Today's partial chapter has its own "Continue Reading" button; listing it twice
-   * would read as two outstanding readings rather than one.
+   * Keyed off `todayProgress` rather than the scheduled chapters: the card only
+   * offers "Continue Reading" when it has progress for a single chapter, so
+   * excluding every scheduled chapter hid partial ones on a multi-chapter day —
+   * a day with two chapters logged against it, which is exactly the shape this
+   * list exists to surface.
    */
   const unfinished = useMemo(() => {
-    const shownToday = new Set(
-      todayReading.scheduled.kind === 'scheduled'
-        ? todayReading.scheduled.chapters.map((c) => `${c.bookId}:${c.chapter}`)
-        : [],
-    );
+    const shownToday =
+      todayProgress?.isPartial === true
+        ? `${todayProgress.reference.bookId}:${todayProgress.reference.chapter}`
+        : null;
     return getUnfinishedChapters(completions, canonIndex).filter(
       (progress) =>
-        !shownToday.has(`${progress.reference.bookId}:${progress.reference.chapter}`),
+        `${progress.reference.bookId}:${progress.reference.chapter}` !== shownToday,
     );
-  }, [completions, canonIndex, todayReading.scheduled]);
+  }, [completions, canonIndex, todayProgress]);
 
   /** Chapters finished, not completion rows — a chapter read in two sittings is one. */
   const chaptersRead = useMemo(

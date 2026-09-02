@@ -238,7 +238,7 @@ function PlanPanel({
         <RecordedBlock
           rows={rows}
           index={index}
-          isComplete={progress === null || !progress.isPartial}
+          isComplete={areRowsComplete(rows, getProgressFor)}
           onUndo={onUndo}
           onUndoEntry={onUndoEntry}
           reducedMotion={reducedMotion}
@@ -339,7 +339,7 @@ function UnscheduledPanel({
         <RecordedBlock
           rows={rows}
           index={index}
-          isComplete
+          isComplete={areRowsComplete(rows, getProgressFor)}
           onUndo={onUndo}
           onUndoEntry={onUndoEntry}
           reducedMotion={reducedMotion}
@@ -685,6 +685,26 @@ function ReferenceBlock({
       </Text>
     </View>
   );
+}
+
+/**
+ * True when every chapter recorded on this day has no verses left.
+ *
+ * Taken from the rows rather than from the scheduled chapter's progress: a day can
+ * hold a chapter the schedule never named, and a day holding two chapters has no
+ * single progress at all. Both used to report a partial read as "completed".
+ */
+function areRowsComplete(
+  rows: readonly ReadingCompletion[],
+  getProgressFor: (reference: BibleReference) => ChapterProgress | null,
+): boolean {
+  return distinctReferences(
+    rows.map((row) => ({ bookId: row.bookId, chapter: row.chapter })),
+  ).every((reference) => {
+    const progress = getProgressFor(reference);
+    // No verse counts means the whole chapter was recorded, which is complete.
+    return progress === null || !progress.isPartial;
+  });
 }
 
 /** `"Leviticus 6:1–7"`, or `"Leviticus 6"` when no span was recorded. */
