@@ -9,6 +9,7 @@ import {
   getCompletionsForDate,
   getCompletionsForRange,
   markReadingComplete,
+  removeCompletionById,
   removeReadingCompletion,
 } from '../completion-repository';
 
@@ -147,5 +148,30 @@ describe('removeReadingCompletion', () => {
     complete('2026-08-01', 13);
 
     expect(getAllCompletions(db)).toHaveLength(1);
+  });
+});
+
+describe('removeCompletionById', () => {
+  it('removes one reading and leaves the rest of the day alone', () => {
+    // The case that matters: a day holding a mistaken entry beside a correct one.
+    // Clearing the whole date to undo the mistake would take the good row with it.
+    complete('2026-08-30', 1, 'GEN');
+    complete('2026-08-30', 6, 'LEV');
+
+    const rows = getCompletionsForDate(db, '2026-08-30');
+    const wrong = rows.find((row) => row.bookId === 'GEN');
+    expect(wrong).toBeDefined();
+
+    removeCompletionById(db, wrong?.id ?? '');
+
+    expect(getCompletionsForDate(db, '2026-08-30')).toEqual([
+      expect.objectContaining({ bookId: 'LEV', chapter: 6 }),
+    ]);
+  });
+
+  it('is a no-op for an id that is not there', () => {
+    complete('2026-08-30', 6, 'LEV');
+    removeCompletionById(db, 'nope');
+    expect(countAllCompletions(db)).toBe(1);
   });
 });

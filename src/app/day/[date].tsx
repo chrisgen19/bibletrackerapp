@@ -24,8 +24,17 @@ export default function DayDetailScreen() {
     book?: string;
     chapter?: string;
   }>();
-  const { plans, completions, completionLookup, scheduleContext, today, completeReading, undoReading, changePlan } =
-    useReadingData();
+  const {
+    plans,
+    completions,
+    completionLookup,
+    scheduleContext,
+    today,
+    completeReading,
+    undoReading,
+    undoReadingEntry,
+    changePlan,
+  } = useReadingData();
 
   const isValid = typeof date === 'string' && isValidDateKey(date);
 
@@ -33,6 +42,20 @@ export default function DayDetailScreen() {
     () => (isValid ? getDayReading(plans, date, scheduleContext) : null),
     [isValid, date, plans, scheduleContext],
   );
+
+  /** The rows recorded on this day, so each can be described and removed on its own. */
+  const rows = useMemo(
+    () => (isValid ? completionLookup.get(date) ?? [] : []),
+    [isValid, date, completionLookup],
+  );
+
+  /**
+   * The chapter the reader is actually on: the head of the unread queue.
+   *
+   * A missed day schedules nothing, so without this the Custom tab and the catch-up
+   * action would fall back to Genesis 1 and quietly record the wrong chapter.
+   */
+  const currentPosition = scheduleContext.unread[0] ?? null;
 
   /**
    * Progress on the day's single scheduled chapter, across every day it was touched.
@@ -82,6 +105,14 @@ export default function DayDetailScreen() {
     undoHaptic();
   }, [day, undoReading]);
 
+  const handleUndoEntry = useCallback(
+    (id: string) => {
+      undoReadingEntry(id);
+      undoHaptic();
+    },
+    [undoReadingEntry],
+  );
+
   const handleChangePlan = useCallback(
     (draft: ReadingPlanDraft) => {
       changePlan(draft);
@@ -124,10 +155,13 @@ export default function DayDetailScreen() {
         today={today}
         onComplete={handleComplete}
         onUndo={handleUndo}
+        onUndoEntry={handleUndoEntry}
         onChangePlan={handleChangePlan}
         completions={completionLookup}
+        rows={rows}
         progress={progress}
         getProgressFor={getProgressFor}
+        currentPosition={currentPosition}
         focusChapter={focusChapter}
       />
     </View>
