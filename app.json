@@ -54,7 +54,8 @@
           "color": "#8C5A33"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "./plugins/with-ios-scene-delegate"
     ],
     "experiments": {
       "typedRoutes": true
