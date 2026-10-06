@@ -6,6 +6,7 @@ import {
   calculateReadingStatus,
   createScheduleContext,
   getDayReading,
+  getPlanCompletionDate,
   isScheduledDay,
   resolvePlanForDate,
 } from '../schedule';
@@ -263,5 +264,139 @@ describe('review fixes', () => {
     // Two chapters left: Revelation 21 today, 22 tomorrow, nothing after.
     expect(chapters(calculateReadingForDate(plan, addDaysToDateKey(TODAY, 1), context))).toEqual(['REV 22']);
     expect(calculateReadingForDate(plan, addDaysToDateKey(TODAY, 2), context)).toEqual({ kind: 'canon-complete' });
+  });
+});
+
+// Regressions for #16. Each case was reproduced against the code before the fix.
+describe('canon finish is resolved per plan segment', () => {
+  const read = (date: string, bookId: string, chapter: number, readingPlanId: string) =>
+    makeCompletion(date, { id: `${bookId}-${chapter}`, bookId, chapter, readingPlanId });
+
+  it('keeps an earlier segment finished after moving on to an unfinished one', () => {
+    // Start at Revelation 20, finish on Aug 3, then move the position to Genesis 1.
+    const revelation = makePlan({ id: 'rev', startDate: '2026-08-01', startBookId: 'REV', startChapter: 20,
+      isActive: false, endDate: '2026-08-09' });
+    const genesis = makePlan({ id: 'gen', startDate: '2026-08-10' });
+    const plans = [revelation, genesis];
+    const rows = [
+      read('2026-08-01', 'REV', 20, 'rev'),
+      read('2026-08-02', 'REV', 21, 'rev'),
+      read('2026-08-03', 'REV', 22, 'rev'),
+      read('2026-08-10', 'GEN', 1, 'gen'),
+    ];
+    const context = ctx(plans, rows);
+
+    expect(getDayReading(plans, '2026-08-05', context).status).toBe('canon-complete');
+    expect(isScheduledDay(plans, '2026-08-05', context)).toBe(false);
+    // The Genesis segment is not finished, so its own unread days are still missed.
+    expect(getDayReading(plans, '2026-08-12', context).status).toBe('missed');
+  });
+
+  it('does not lend a later segment its finish date to an earlier, unfinished one', () => {
+    // Revelation 22 was read under the Genesis plan, so a segment starting there is
+    // finished from its first day. The Genesis segment still owed its chapters.
+    const genesis = makePlan({ id: 'gen', startDate: '2026-08-01', isActive: false, endDate: '2026-08-14' });
+    const revelation = makePlan({ id: 'rev', startDate: '2026-08-15', startBookId: 'REV', startChapter: 22 });
+    const plans = [genesis, revelation];
+    const context = ctx(plans, [read('2026-08-02', 'REV', 22, 'gen')]);
+
+    expect(context.canonFinishedOn).toBe('2026-08-02');
+    expect(getDayReading(plans, '2026-08-05', context).status).toBe('missed');
+    expect(isScheduledDay(plans, '2026-08-05', context)).toBe(true);
+  });
+});
+
+describe('canon finish includes chapters owed from behind the plan start', () => {
+  const plan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 21 });
+
+  it('is the day the last owed chapter closed, not the last chapter from the start', () => {
+    const rows = [
+      makeCompletion('2026-08-01', { id: 'a', bookId: 'GEN', chapter: 1, verses: { from: 1, to: 10 } }),
+      makeCompletion('2026-08-02', { id: 'b', bookId: 'REV', chapter: 21 }),
+      makeCompletion('2026-08-03', { id: 'c', bookId: 'REV', chapter: 22 }),
+      makeCompletion('2026-08-10', { id: 'd', bookId: 'GEN', chapter: 1, verses: { from: 11, to: 31 } }),
+    ];
+    const context = ctx([plan], rows);
+
+    expect(context.canonFinishedOn).toBe('2026-08-10');
+    // Genesis 1 was still owed on Aug 4-9; finishing it later must not rewrite them.
+    expect(getDayReading([plan], '2026-08-05', context).status).toBe('missed');
+    expect(getDayReading([plan], '2026-08-11', context).status).toBe('canon-complete');
+  });
+
+  it('is still unset while that chapter is part-read', () => {
+    const rows = [
+      makeCompletion('2026-08-01', { id: 'a', bookId: 'GEN', chapter: 1, verses: { from: 1, to: 10 } }),
+      makeCompletion('2026-08-02', { id: 'b', bookId: 'REV', chapter: 21 }),
+      makeCompletion('2026-08-03', { id: 'c', bookId: 'REV', chapter: 22 }),
+    ];
+    expect(ctx([plan], rows).canonFinishedOn).toBeNull();
+  });
+});
+
+describe('the unread queue past its cache', () => {
+  it('does not continue into chapters before the plan start', () => {
+    // Revelation 22 read, Genesis 1 part-read behind the start: Genesis 1 is the only
+    // chapter owed, so nothing is left after it.
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 22 });
+    const rows = [
+      makeCompletion('2026-08-01', { id: 'a', bookId: 'REV', chapter: 22 }),
+      makeCompletion('2026-08-02', { id: 'b', bookId: 'GEN', chapter: 1, verses: { from: 1, to: 10 } }),
+    ];
+    const context = ctx([plan], rows);
+
+    expect(chapters(calculateReadingForDate(plan, TODAY, context))).toEqual(['GEN 1']);
+    expect(calculateReadingForDate(plan, addDaysToDateKey(TODAY, 1), context)).toEqual({ kind: 'canon-complete' });
+  });
+});
+
+describe('a plan that starts in the future', () => {
+  const plan = makePlan({ startDate: '2026-09-01' });
+
+  it('previews its first day as its start chapter', () => {
+    const context = ctx([plan], []);
+    expect(getDayReading([plan], '2026-08-31', context).status).toBe('before-plan');
+    expect(chapters(calculateReadingForDate(plan, '2026-09-01', context))).toEqual(['GEN 1']);
+    expect(chapters(calculateReadingForDate(plan, '2026-09-02', context))).toEqual(['GEN 2']);
+  });
+
+  it('previews the same chapters before and on its start date', () => {
+    const early = ctx([plan], []);
+    const onTheDay = ctx([plan], [], '2026-09-01');
+    for (const date of ['2026-09-01', '2026-09-15', '2026-12-31']) {
+      expect(calculateReadingForDate(plan, date, early)).toEqual(calculateReadingForDate(plan, date, onTheDay));
+    }
+  });
+});
+
+describe('getPlanCompletionDate', () => {
+  it('counts every chapter still owed, not just the cached queue', () => {
+    const plan = makePlan({ startDate: TODAY });
+    // 1,189 chapters at one a day: the last one is read 1,188 days from today.
+    expect(getPlanCompletionDate(plan, ctx([plan], []))).toBe(addDaysToDateKey(TODAY, 1188));
+  });
+
+  it('divides by chapters per day', () => {
+    const plan = makePlan({ startDate: TODAY, chaptersPerDay: 3 });
+    // 1,189 / 3 rounds up to 397 days, so the last is 396 days out.
+    expect(getPlanCompletionDate(plan, ctx([plan], []))).toBe(addDaysToDateKey(TODAY, 396));
+  });
+
+  it('starts tomorrow once today is already read', () => {
+    const plan = makePlan({ startDate: '2026-08-01' });
+    const context = ctx([plan], [makeCompletion(TODAY)]);
+    // Genesis 1 is done, 1,188 remain, and the next one is tomorrow's.
+    expect(getPlanCompletionDate(plan, context)).toBe(addDaysToDateKey(TODAY, 1188));
+  });
+
+  it('counts a plan that has not begun from its start date', () => {
+    const plan = makePlan({ startDate: '2026-09-01', startBookId: 'REV', startChapter: 22 });
+    expect(getPlanCompletionDate(plan, ctx([plan], []))).toBe('2026-09-01');
+  });
+
+  it('is null once nothing is owed', () => {
+    const plan = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 22 });
+    const context = ctx([plan], [makeCompletion('2026-08-02', { bookId: 'REV', chapter: 22 })]);
+    expect(getPlanCompletionDate(plan, context)).toBeNull();
   });
 });

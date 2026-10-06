@@ -135,11 +135,43 @@ export function isCanonFullyRead(
 }
 
 /**
+ * Chapters behind `absoluteLimit` that were left part-read at the end of some day.
+ *
+ * {@link getUnreadSequence} owes these for as long as they are partial, so the plan is
+ * not finished until they close. A chapter read whole on the day it was first opened
+ * was never owed, which is what keeps a later reread from moving the finish date.
+ */
+function getChaptersOnceOwedBefore(
+  completions: readonly ReadingCompletion[],
+  absoluteLimit: number,
+  index: CanonIndex,
+): readonly BibleReference[] {
+  const firstRead = new Map<number, { reference: BibleReference; date: DateKey }>();
+  for (const completion of completions) {
+    const reference = { bookId: completion.bookId, chapter: completion.chapter };
+    const absolute = index.toAbsoluteIndex(reference);
+    if (absolute === null || absolute >= absoluteLimit) continue;
+    const seen = firstRead.get(absolute);
+    if (seen === undefined || compareDateKeys(completion.localDate, seen.date) < 0) {
+      firstRead.set(absolute, { reference, date: completion.localDate });
+    }
+  }
+
+  const owed: BibleReference[] = [];
+  for (const { reference, date } of firstRead.values()) {
+    if (getChapterCompletionDate(completions, reference, index) !== date) owed.push(reference);
+  }
+  return owed;
+}
+
+/**
  * The day the plan first had nothing left owed.
  *
  * Taken from the chapter that closed last, not from the newest row in the database:
  * a reread logged afterwards must not drag the finish line forward and turn the days
- * in between into missed ones.
+ * in between into missed ones. Chapters part-read behind the plan start count too,
+ * since the unread queue owes them: finishing one later must not back-date the finish
+ * and turn the days it was owed into finished ones.
  */
 export function getCanonFinishedOn(
   plan: ReadingPlan,
@@ -154,6 +186,13 @@ export function getCanonFinishedOn(
     const reference = index.fromAbsoluteIndex(absolute);
     if (reference === null) break;
     const closed = getChapterCompletionDate(completions, reference, index);
+    if (closed === null) return null;
+    if (latest === null || compareDateKeys(closed, latest) > 0) latest = closed;
+  }
+
+  for (const reference of getChaptersOnceOwedBefore(completions, start, index)) {
+    const closed = getChapterCompletionDate(completions, reference, index);
+    // Still part-read: the plan is not finished yet.
     if (closed === null) return null;
     if (latest === null || compareDateKeys(closed, latest) > 0) latest = closed;
   }

@@ -18,7 +18,7 @@ export type MonthKind = 'no-plan' | 'before-plan' | 'past' | 'current' | 'future
 
 export interface MonthStatistics {
   readonly kind: MonthKind;
-  /** Days in the month with a recorded completion. */
+  /** Elapsed days in the month with a recorded completion, the numerator for `percent`. */
   readonly completedDays: number;
   /** Scheduled days that have already elapsed — the denominator for `percent`. */
   readonly expectedDays: number;
@@ -69,7 +69,9 @@ export function calculateMonthStatistics({
 
     const elapsed = compareDateKeys(date, today) <= 0;
     if (elapsed) expectedDays += 1;
-    if (completions.has(date)) completedDays += 1;
+    // Only elapsed days count. The UI cannot log a future day, but a clock or timezone
+    // change can leave rows dated after today, which pushed `percent` past 100.
+    if (elapsed && completions.has(date)) completedDays += 1;
   }
 
   const kind: MonthKind =
