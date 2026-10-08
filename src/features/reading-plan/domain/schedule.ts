@@ -378,5 +378,11 @@ export function isScheduledDay(
   if (context.byDate.has(date)) return true;
   const finishedOn = getCanonFinishedOnFor(plan, context);
   if (finishedOn === null) return true;
+  // Past days keep the finish. Today and later follow the live queue, as
+  // calculateReadingForDate does: a chapter part-read after the finish is offered again
+  // today, so today is a reading day for the month's statistics too.
+  if (compareDateKeys(date, context.today) >= 0) {
+    return calculateReadingForDate(plan, date, context).kind === 'scheduled';
+  }
   return compareDateKeys(date, finishedOn) <= 0;
 }

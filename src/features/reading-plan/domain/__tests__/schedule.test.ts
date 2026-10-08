@@ -428,6 +428,17 @@ describe('a chapter opened after the canon finish does not move it', () => {
     expect(chapters(calculateReadingForDate(plan, TODAY, context))).toEqual(['GEN 1']);
   });
 
+  it('makes today a reading day while it offers that chapter again', () => {
+    // Codex review on bibletrackerweb#24: today offered Genesis 1, yet isScheduledDay
+    // still applied the finish to it, so the month's statistics left today out.
+    const context = ctx([plan], [finish, genesisOpened]);
+
+    expect(isScheduledDay([plan], TODAY, context)).toBe(true);
+    // Tomorrow has nothing left to offer, and the past keeps the finish.
+    expect(isScheduledDay([plan], addDaysToDateKey(TODAY, 1), context)).toBe(false);
+    expect(isScheduledDay([plan], '2026-08-12', context)).toBe(false);
+  });
+
   it('keeps an earlier segment finished when the next one reads a chapter in two sittings', () => {
     // #16's own repro, with Genesis 1 split across two days as verse tracking allows.
     const revelation = makePlan({ id: 'rev', startDate: '2026-08-01', startBookId: 'REV', startChapter: 20,
