@@ -149,6 +149,28 @@ describe('calculateMonthStatistics', () => {
   });
 });
 
+describe('a chapter part-read after the canon finish', () => {
+  it('counts today as expected while today offers that chapter again', () => {
+    // Codex review on bibletrackerweb#24. Revelation 22 finished the plan on Aug 1, and
+    // Genesis 1 was part-read on Aug 10, so today offers Genesis 1 again.
+    const finished = makePlan({ startDate: '2026-08-01', startBookId: 'REV', startChapter: 22 });
+    const rows = [
+      makeCompletion('2026-08-01', { id: 'a', bookId: 'REV', chapter: 22 }),
+      makeCompletion('2026-08-10', { id: 'b', bookId: 'GEN', chapter: 1, verses: { from: 1, to: 10 } }),
+    ];
+    const stats = calculateMonthStatistics({
+      plans: [finished],
+      completions: createCompletionLookup(rows),
+      context: createScheduleContext([finished], rows, '2026-08-24'),
+      monthDates: AUGUST_2026,
+      today: '2026-08-24',
+    });
+
+    // Aug 1 and Aug 10 were read, and today is owed; the days in between stay finished.
+    expect(describeMonthProgress(stats)).toBe('2 of 3 days');
+  });
+});
+
 describe('describeMonthProgress', () => {
   it('uses singular copy for a single day', () => {
     const stats = statsFor({
