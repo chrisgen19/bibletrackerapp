@@ -149,7 +149,9 @@ export function setReadingExtra(db: ReadingDatabase, id: string, isExtra: boolea
  * given ("Move my plan"; without one, "Count toward plan").
  *
  * One transaction: the reading joins the plan only once the plan has moved, so it lands
- * in the new segment governing its day, and a failure leaves neither change behind.
+ * in the new segment governing its day, and a failure leaves neither change behind. A
+ * reading that is no longer stored (removed since the alert opened) changes nothing:
+ * the plan only moves to carry on from a reading that is there.
  */
 export function countReadingTowardPlan(
   db: ReadingDatabase,
@@ -157,6 +159,12 @@ export function countReadingTowardPlan(
   draft: ReadingPlanDraft | null,
 ): void {
   db.transaction((tx) => {
+    const stored = tx
+      .select({ id: readingCompletions.id })
+      .from(readingCompletions)
+      .where(eq(readingCompletions.id, id))
+      .get();
+    if (stored === undefined) return;
     if (draft !== null) replaceActiveReadingPlan(tx, draft);
     setReadingExtra(tx, id, false);
   });

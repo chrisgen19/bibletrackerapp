@@ -320,6 +320,23 @@ describe('extra readings', () => {
     expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: plan.id });
   });
 
+  // Review on #22 (CodeRabbit): a stale id must not move the plan on its own.
+  it('moves nothing when the reading is no longer stored', () => {
+    const [id] = extra('2026-08-10', 5, 'REV');
+    removeCompletionById(db, id ?? '');
+
+    countReadingTowardPlan(db, id ?? '', {
+      canonId: 'protestant',
+      startDate: '2026-08-10',
+      startBookId: 'REV',
+      startChapter: 6,
+      chaptersPerDay: 1,
+    });
+
+    expect(getActiveReadingPlan(db)?.id).toBe(plan.id);
+    expect(getAllCompletions(db)).toEqual([]);
+  });
+
   it('keeps the extras when the day is undone', () => {
     complete('2026-08-01', 1);
     extra('2026-08-01', 5, 'REV');

@@ -48,18 +48,19 @@ export function selectProgressCompletions(
 
 /**
  * The read-through a chapter recorded on a day counts toward, from that day's plan
- * readings, or null when the day holds no reading of it.
+ * readings, or null when the day holds no plan reading of it.
  *
  * The day sheet measures such a chapter there rather than in the read-through governing
  * the day: on the day a new read-through starts, the chapter that finished the last one
- * is finished, not unread in the new one.
+ * is finished, not unread in the new one. Extra readings are skipped: they never count
+ * toward plan progress, whichever segment they are attached to.
  */
 export function getRecordedReadThrough(
   plans: readonly ReadingPlan[],
   dayReadings: readonly ReadingCompletion[],
   reference: BibleReference,
 ): number | null {
-  const recorded = dayReadings.find((row) => isSameReference(row, reference));
+  const recorded = dayReadings.find((row) => row.isExtra !== true && isSameReference(row, reference));
   if (recorded === undefined) return null;
   const plan = plans.find((each) => each.id === recorded.readingPlanId);
   return plan === undefined ? 1 : getReadThrough(plan);

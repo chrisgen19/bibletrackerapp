@@ -176,6 +176,26 @@ describe('getRecordedReadThrough', () => {
     expect(measuredIn(getReadThrough(restart))).toBe(false);
   });
 
+  // Review on #22 (Codex): an extra never decides where a chapter is measured.
+  it('skips an extra reading of the chapter', () => {
+    const extra = makeCompletion(FIRST_FINISHED, {
+      id: 'extra',
+      readingPlanId: first.id,
+      bookId: 'REV',
+      chapter: 22,
+      isExtra: true,
+    });
+    const planReading = makeCompletion(FIRST_FINISHED, {
+      id: 'plan',
+      readingPlanId: restart.id,
+      bookId: 'REV',
+      chapter: 22,
+    });
+
+    expect(getRecordedReadThrough(plans, [extra], REVELATION_22)).toBeNull();
+    expect(getRecordedReadThrough(plans, [extra, planReading], REVELATION_22)).toBe(2);
+  });
+
   it('is null for a chapter the day holds no reading of', () => {
     expect(
       getRecordedReadThrough(plans, finishingDay, {
