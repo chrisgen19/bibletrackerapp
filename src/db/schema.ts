@@ -19,6 +19,17 @@ export const readingPlans = sqliteTable('reading_plan', {
   isActive: integer('is_active', { mode: 'boolean' }).notNull().default(true),
   /** Inclusive last day this segment governs. `null` while open-ended. */
   endDate: text('end_date'),
+  /**
+   * The time through the Bible this segment belongs to, from 1. A position change keeps
+   * it; starting the next read-through adds one. Every segment written before this
+   * existed is read-through 1.
+   *
+   * `CHECK (read_through >= 1)` is hand-written in `0002_read_throughs.sql`, not declared
+   * here: drizzle-kit adds a check to an existing SQLite table only by rebuilding it, and
+   * migrations run in a transaction with foreign keys on, so dropping `reading_plan`
+   * would cascade-delete every reading.
+   */
+  readThrough: integer('read_through').notNull().default(1),
 });
 
 /**
@@ -51,6 +62,11 @@ export const readingCompletions = sqliteTable(
     fromVerse: integer('from_verse').notNull().default(0),
     toVerse: integer('to_verse').notNull().default(0),
     completedAt: integer('completed_at').notNull(),
+    /**
+     * An extra reading: shown on its day and counted toward the streak, but never part
+     * of plan progress. Every row written before this existed is a plan reading.
+     */
+    isExtra: integer('is_extra', { mode: 'boolean' }).notNull().default(false),
   },
   (table) => [
     // Keyed on the span as well as the chapter, so reading 1-10 and later 11-31 are
