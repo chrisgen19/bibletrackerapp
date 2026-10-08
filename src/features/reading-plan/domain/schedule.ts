@@ -6,6 +6,7 @@ import {
   daysBetweenDateKeys,
   getTodayDateKey,
   isDateKeyWithin,
+  maxDateKey,
   type DateKey,
 } from '@/utils/date-key';
 
@@ -55,12 +56,22 @@ export interface ScheduleContext {
   /** True when today already has a recorded reading, so it consumes no queue slot. */
   readonly todayRecorded: boolean;
   /**
-   * The day the last chapter was read, once nothing is left owed.
+   * The first day nothing was left owed, for the active plan.
    *
    * A date rather than a flag: days *after* the canon was finished expect no reading,
-   * while the days leading up to it still counted.
+   * while the days leading up to it still counted. It stays set when a chapter is
+   * part-read afterwards: the days in between stay finished, while today and later
+   * follow the live queue and offer that chapter again.
    */
   readonly canonFinishedOn: DateKey | null;
+  /**
+   * The same date for every plan segment, by plan id.
+   *
+   * Each segment finishes on its own terms. Applying the active plan's date to every
+   * segment turned an earlier segment's finished days into missed ones once the reader
+   * moved on, and lent a later segment's date to days an earlier one still owed.
+   */
+  readonly canonFinishedOnByPlan: ReadonlyMap<string, DateKey | null>;
   /** Chapters read in full, so slots past the cached queue can be derived on demand. */
   readonly completedKeys: ReadonlySet<string>;
   /** The plan governing today, whose canon and start reference define the queue. */
@@ -82,18 +93,64 @@ export function createScheduleContext(
   const index = injectedIndex ?? getCanonIndex(active?.canonId ?? 'protestant');
 
   const completed = getCompletedChapterKeys(completions, index);
-  const finished = active !== null && isCanonFullyRead(active, completed, index, completions);
+  const canonFinishedOnByPlan = new Map<string, DateKey | null>();
+  for (const plan of plans) {
+    // A cheap gate on the chapters from the start only. Chapters part-read behind the
+    // start are weighed by date in getCanonFinishedOn: one opened after the finish must
+    // not erase it, as it did for an earlier segment when the next one split a chapter.
+    const finished = isCanonFullyRead(plan, completed, index);
+    canonFinishedOnByPlan.set(plan.id, finished ? getCanonFinishedOn(plan, completions, index) : null);
+  }
 
   return {
     byDate,
     unread: active === null ? [] : getUnreadSequence(active, completed, index, undefined, completions),
     today,
     todayRecorded: byDate.has(today),
-    canonFinishedOn: finished && active !== null ? getCanonFinishedOn(active, completions, index) : null,
+    canonFinishedOn: active === null ? null : canonFinishedOnByPlan.get(active.id) ?? null,
+    canonFinishedOnByPlan,
     completedKeys: completed,
     activePlan: active,
     index,
   };
+}
+
+/** The canon finish date for the segment `plan`. See {@link ScheduleContext.canonFinishedOnByPlan}. */
+function getCanonFinishedOnFor(plan: ReadingPlan, context: ScheduleContext): DateKey | null {
+  const own = context.canonFinishedOnByPlan.get(plan.id);
+  // A plan the context was not built from (a draft, say) falls back to the active one.
+  return own === undefined ? context.canonFinishedOn : own;
+}
+
+/**
+ * Where the unread walk continues past the cached queue, or `null` when it cannot.
+ *
+ * Never behind the plan start. The queue can end on a chapter part-read behind it
+ * (those are owed first), and resuming after one of those walked into chapters the
+ * plan never covered, scheduling them for the following days.
+ */
+function getResumeIndex(context: ScheduleContext): number | null {
+  const plan = context.activePlan;
+  const last = context.unread[context.unread.length - 1];
+  if (plan === null || last === undefined) return null;
+
+  const lastIndex = context.index.toAbsoluteIndex(last);
+  const start = context.index.toAbsoluteIndex({ bookId: plan.startBookId, chapter: plan.startChapter });
+  if (lastIndex === null || start === null) return null;
+  return Math.max(lastIndex + 1, start);
+}
+
+/**
+ * The day that reads the head of the unread queue.
+ *
+ * Today, unless today is already recorded (the queue has already moved past what was
+ * read, so tomorrow starts at its head) or the plan starts later. Counting from today
+ * for a future start let the days before it consume chapters, so the preview shifted
+ * as the start date approached.
+ */
+function getFirstSlotDay(plan: ReadingPlan, context: ScheduleContext): DateKey {
+  const from = context.todayRecorded ? addDaysToDateKey(context.today, 1) : context.today;
+  return maxDateKey(from, plan.startDate);
 }
 
 /**
@@ -107,16 +164,12 @@ export function createScheduleContext(
 function readUnreadSlot(context: ScheduleContext, slot: number, count: number): readonly BibleReference[] {
   if (slot + count <= context.unread.length) return context.unread.slice(slot, slot + count);
 
-  const plan = context.activePlan;
-  const last = context.unread[context.unread.length - 1];
-  if (plan === null || last === undefined) return context.unread.slice(slot, slot + count);
-
-  const resumeFrom = context.index.toAbsoluteIndex(last);
+  const resumeFrom = getResumeIndex(context);
   if (resumeFrom === null) return context.unread.slice(slot, slot + count);
 
   const extended = [...context.unread];
   for (
-    let absolute = resumeFrom + 1;
+    let absolute = resumeFrom;
     absolute < context.index.totalChapters && extended.length < slot + count;
     absolute += 1
   ) {
@@ -150,17 +203,17 @@ export function calculateReadingForDate(
     };
   }
 
-  // Once nothing is owed, every later day is finished rather than missed.
-  if (context.canonFinishedOn !== null && compareDateKeys(date, context.canonFinishedOn) > 0) {
-    return { kind: 'canon-complete' };
+  const daysAhead = daysBetweenDateKeys(context.today, date);
+  if (daysAhead < 0) {
+    // Once nothing was owed, every later past day is finished rather than missed. The
+    // finish belongs to the segment governing this date, not to the active plan, and a
+    // chapter opened since does not reopen it. Today and later follow the live queue.
+    const finishedOn = getCanonFinishedOnFor(plan, context);
+    const finished = finishedOn !== null && compareDateKeys(date, finishedOn) > 0;
+    return { kind: finished ? 'canon-complete' : 'not-scheduled' };
   }
 
-  const daysAhead = daysBetweenDateKeys(context.today, date);
-  if (daysAhead < 0) return { kind: 'not-scheduled' };
-
-  // Today consumes the first slots unless it is already recorded, in which case the
-  // queue has already skipped past what was read and tomorrow starts at its head.
-  const slot = (daysAhead + (context.todayRecorded ? -1 : 0)) * plan.chaptersPerDay;
+  const slot = daysBetweenDateKeys(getFirstSlotDay(plan, context), date) * plan.chaptersPerDay;
   if (slot < 0) return { kind: 'not-scheduled' };
 
   const chapters = readUnreadSlot(context, slot, plan.chaptersPerDay);
@@ -197,15 +250,39 @@ export function getEarliestPlanStart(plans: readonly ReadingPlan[]): DateKey | n
   return earliest;
 }
 
-/** The day the plan would finish, if the reader keeps to one day per scheduled slot. */
+/**
+ * Every chapter still owed, counting past the cached queue.
+ *
+ * `context.unread` stops at UNREAD_HORIZON, so its length undercounts any plan with
+ * more than that left: a new Genesis 1 plan looked 400 chapters long instead of 1,189.
+ */
+function countUnread(context: ScheduleContext): number {
+  let count = context.unread.length;
+  const resumeFrom = getResumeIndex(context);
+  if (resumeFrom === null) return count;
+
+  for (let absolute = resumeFrom; absolute < context.index.totalChapters; absolute += 1) {
+    const reference = context.index.fromAbsoluteIndex(absolute);
+    if (reference === null) break;
+    if (!context.completedKeys.has(`${reference.bookId}:${reference.chapter}`)) count += 1;
+  }
+  return count;
+}
+
+/**
+ * The day the plan would finish, if the reader keeps to one day per scheduled slot.
+ *
+ * Counts from the same first day as {@link calculateReadingForDate}, so the estimate
+ * and the calendar agree, including for a plan that has not begun yet.
+ */
 export function getPlanCompletionDate(
   plan: ReadingPlan,
   context: ScheduleContext,
 ): DateKey | null {
-  if (context.unread.length === 0) return null;
-  const days = Math.ceil(context.unread.length / plan.chaptersPerDay);
-  const from = context.todayRecorded ? addDaysToDateKey(context.today, 1) : context.today;
-  return addDaysToDateKey(from, days - 1);
+  const remaining = countUnread(context);
+  if (remaining === 0) return null;
+  const days = Math.ceil(remaining / plan.chaptersPerDay);
+  return addDaysToDateKey(getFirstSlotDay(plan, context), days - 1);
 }
 
 /**
@@ -296,8 +373,10 @@ export function isScheduledDay(
   date: DateKey,
   context: ScheduleContext,
 ): boolean {
-  if (resolvePlanForDate(plans, date) === null) return false;
+  const plan = resolvePlanForDate(plans, date);
+  if (plan === null) return false;
   if (context.byDate.has(date)) return true;
-  if (context.canonFinishedOn === null) return true;
-  return compareDateKeys(date, context.canonFinishedOn) <= 0;
+  const finishedOn = getCanonFinishedOnFor(plan, context);
+  if (finishedOn === null) return true;
+  return compareDateKeys(date, finishedOn) <= 0;
 }

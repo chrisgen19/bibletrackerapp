@@ -113,8 +113,10 @@ export function getUnreadSequence(
   const start = index.toAbsoluteIndex({ bookId: plan.startBookId, chapter: plan.startChapter });
   if (start === null) return [];
 
-  // Anything part-read behind the plan start comes first: it is already overdue.
-  const unread: BibleReference[] = [...getPartialChaptersBefore(partials, start, index)].slice(0, limit);
+  // Anything part-read behind the plan start comes first: it is already overdue. These
+  // are never cut at `limit`, which bounds only the walk from the start: walking past
+  // the cached queue resumes at the plan start, so one left out here would be skipped.
+  const unread: BibleReference[] = [...getPartialChaptersBefore(partials, start, index)];
 
   for (let absolute = start; absolute < index.totalChapters && unread.length < limit; absolute += 1) {
     const reference = index.fromAbsoluteIndex(absolute);
@@ -135,11 +137,45 @@ export function isCanonFullyRead(
 }
 
 /**
- * The day the plan first had nothing left owed.
+ * When each chapter behind `absoluteLimit` sat part-read at the end of a day: from the
+ * day it was first opened to the day it closed (`null` while it is still open).
+ *
+ * {@link getUnreadSequence} owes these chapters for exactly that span. A chapter read
+ * whole on the day it was first opened was never owed, so it has no span.
+ */
+function getOwedSpansBefore(
+  completions: readonly ReadingCompletion[],
+  absoluteLimit: number,
+  index: CanonIndex,
+): readonly { from: DateKey; to: DateKey | null }[] {
+  const firstRead = new Map<number, { reference: BibleReference; date: DateKey }>();
+  for (const completion of completions) {
+    const reference = { bookId: completion.bookId, chapter: completion.chapter };
+    const absolute = index.toAbsoluteIndex(reference);
+    if (absolute === null || absolute >= absoluteLimit) continue;
+    const seen = firstRead.get(absolute);
+    if (seen === undefined || compareDateKeys(completion.localDate, seen.date) < 0) {
+      firstRead.set(absolute, { reference, date: completion.localDate });
+    }
+  }
+
+  const spans: { from: DateKey; to: DateKey | null }[] = [];
+  for (const { reference, date } of firstRead.values()) {
+    const closed = getChapterCompletionDate(completions, reference, index);
+    if (closed !== date) spans.push({ from: date, to: closed });
+  }
+  return spans;
+}
+
+/**
+ * The first day the plan had nothing left owed.
  *
  * Taken from the chapter that closed last, not from the newest row in the database:
  * a reread logged afterwards must not drag the finish line forward and turn the days
- * in between into missed ones.
+ * in between into missed ones. Chapters part-read behind the plan start count while
+ * they were owed: one still open on the day the last chapter closed pushes the finish
+ * to the day it closed. One opened after the finish does not move it, so a finished
+ * stretch of history stays finished.
  */
 export function getCanonFinishedOn(
   plan: ReadingPlan,
@@ -149,13 +185,30 @@ export function getCanonFinishedOn(
   const start = index.toAbsoluteIndex({ bookId: plan.startBookId, chapter: plan.startChapter });
   if (start === null) return null;
 
-  let latest: DateKey | null = null;
+  let finished: DateKey | null = null;
   for (let absolute = start; absolute < index.totalChapters; absolute += 1) {
     const reference = index.fromAbsoluteIndex(absolute);
     if (reference === null) break;
     const closed = getChapterCompletionDate(completions, reference, index);
     if (closed === null) return null;
-    if (latest === null || compareDateKeys(closed, latest) > 0) latest = closed;
+    if (finished === null || compareDateKeys(closed, finished) > 0) finished = closed;
   }
-  return latest;
+  if (finished === null) return null;
+
+  // While a chapter behind the start was still owed at the end of that day, the plan
+  // was not finished: move on to the day it closed. Each move goes strictly forward.
+  const spans = getOwedSpansBefore(completions, start, index);
+  let day: DateKey = finished;
+  for (let moved = true; moved; ) {
+    moved = false;
+    for (const span of spans) {
+      const owedThatDay =
+        compareDateKeys(span.from, day) <= 0 && (span.to === null || compareDateKeys(span.to, day) > 0);
+      if (!owedThatDay) continue;
+      if (span.to === null) return null;
+      day = span.to;
+      moved = true;
+    }
+  }
+  return day;
 }

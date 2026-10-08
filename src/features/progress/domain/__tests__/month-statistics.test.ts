@@ -66,6 +66,20 @@ describe('calculateMonthStatistics', () => {
     expect(describeMonthProgress(stats)).toBe('23 of 24 days');
   });
 
+  it('ignores completions dated after today, so percent stays within 0-100', () => {
+    // Regression for #16. The UI cannot log a future day, but a clock or timezone
+    // change can leave rows dated after today; they used to give "3 of 1 days", 300%.
+    const stats = statsFor({
+      monthDates: AUGUST_2026,
+      completed: ['2026-08-01', '2026-08-02', '2026-08-03'],
+      today: '2026-08-01',
+    });
+    expect(stats.expectedDays).toBe(1);
+    expect(stats.completedDays).toBe(1);
+    expect(stats.percent).toBe(100);
+    expect(describeMonthProgress(stats)).toBe('1 of 1 day');
+  });
+
   it('counts every day for a fully elapsed month', () => {
     const completed = eachDateKeyInRange('2026-08-01', '2026-08-20');
     const stats = statsFor({ monthDates: AUGUST_2026, completed, today: '2026-09-15' });
