@@ -44,7 +44,7 @@ describe('SettingsScreen', () => {
   it('says Finished once every chapter has been read', async () => {
     const reader = readerPartWayThrough();
     const { getByTestId } = await renderSettings({
-      scheduleContext: { ...reader.scheduleContext, unread: [] },
+      planScheduleContext: { ...reader.planScheduleContext, unread: [] },
     });
 
     expect(getByTestId('settings-reading-plan').props.accessibilityLabel).toBe(

@@ -5,8 +5,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { IconButton } from '@/components/icon-button';
 import { Text } from '@/components/text';
-import { getCanonIndex } from '@/data/bible/canon-index';
 import { CalendarSurface } from '@/features/progress/components/calendar-surface';
+import { NextReadThroughCard } from '@/features/progress/components/next-read-through-card';
 import { StatRow } from '@/features/progress/components/stat-row';
 import { TodayReadingCard } from '@/features/progress/components/today-reading-card';
 import { UnfinishedList } from '@/features/progress/components/unfinished-list';
@@ -17,69 +17,33 @@ import {
   type MonthKey,
 } from '@/features/progress/domain/calendar-month';
 import { useMonthWindow } from '@/features/progress/hooks/use-month-window';
+import { useReadingProgress } from '@/features/progress/hooks/use-reading-progress';
 import { useStreaks } from '@/features/progress/hooks/use-streaks';
-import {
-  countChaptersRead,
-  getChapterProgress,
-  getUnfinishedChapters,
-} from '@/features/reading-plan/domain/chapter-progress';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
-import { useTodayReading } from '@/features/reading-plan/hooks/use-today-reading';
 import { useTheme } from '@/theme/theme-provider';
 import type { DateKey } from '@/utils/date-key';
-import { completionHaptic } from '@/utils/haptics';
+import { completionHaptic, settingChangedHaptic } from '@/utils/haptics';
 
 export default function ProgressScreen() {
   const theme = useTheme();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { hasCompletedOnboarding, today, completions, completeReading, activePlan } = useReadingData();
+  const {
+    hasCompletedOnboarding,
+    today,
+    completeReading,
+    currentReadThrough,
+    finishedReadThroughs,
+    canStartNextReadThrough,
+    startNextReadThrough,
+  } = useReadingData();
 
   const [monthKey, setMonthKey] = useState<MonthKey>(() => monthKeyFromDateKey(today));
   const monthWindow = useMonthWindow(monthKey);
-  const todayReading = useTodayReading();
   const streaks = useStreaks();
+  const { todayReading, todayProgress, unfinished, chaptersRead, canonIndex } = useReadingProgress();
 
   const currentMonthKey = useMemo(() => monthKeyFromDateKey(today), [today]);
-  const canonIndex = useMemo(
-    () => getCanonIndex(activePlan?.canonId ?? 'protestant'),
-    [activePlan],
-  );
-
-  /** Progress on today's chapter, so the card can show what is left to read. */
-  const todayProgress = useMemo(() => {
-    if (todayReading.scheduled.kind !== 'scheduled') return null;
-    const chapter =
-      todayReading.scheduled.chapters.length === 1 ? todayReading.scheduled.chapters[0] : undefined;
-    if (chapter === undefined) return null;
-    return getChapterProgress(completions, chapter, canonIndex);
-  }, [todayReading.scheduled, completions, canonIndex]);
-
-  /**
-   * Chapters left half-read, minus the one today's card is already showing.
-   *
-   * Keyed off `todayProgress` rather than the scheduled chapters: the card only
-   * offers "Continue Reading" when it has progress for a single chapter, so
-   * excluding every scheduled chapter hid partial ones on a multi-chapter day —
-   * a day with two chapters logged against it, which is exactly the shape this
-   * list exists to surface.
-   */
-  const unfinished = useMemo(() => {
-    const shownToday =
-      todayProgress?.isPartial === true
-        ? `${todayProgress.reference.bookId}:${todayProgress.reference.chapter}`
-        : null;
-    return getUnfinishedChapters(completions, canonIndex).filter(
-      (progress) =>
-        `${progress.reference.bookId}:${progress.reference.chapter}` !== shownToday,
-    );
-  }, [completions, canonIndex, todayProgress]);
-
-  /** Chapters finished, not completion rows — a chapter read in two sittings is one. */
-  const chaptersRead = useMemo(
-    () => countChaptersRead(completions, canonIndex),
-    [completions, canonIndex],
-  );
   const isViewingCurrentMonth = monthKeysEqual(monthKey, currentMonthKey);
 
   const stepMonth = useCallback((step: number) => {
@@ -98,6 +62,10 @@ export default function ProgressScreen() {
     completeReading(today, todayReading.scheduled.chapters);
     completionHaptic();
   }, [completeReading, today, todayReading.scheduled]);
+
+  const startAgain = useCallback(() => {
+    if (startNextReadThrough()) settingChangedHaptic();
+  }, [startNextReadThrough]);
 
   if (!hasCompletedOnboarding) {
     return <Redirect href="/onboarding" />;
@@ -146,6 +114,12 @@ export default function ProgressScreen() {
           />
         </View>
 
+        {canStartNextReadThrough ? (
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <NextReadThroughCard nextReadThrough={currentReadThrough + 1} onStart={startAgain} />
+          </View>
+        ) : null}
+
         {unfinished.length > 0 ? (
           <View style={{ marginTop: theme.spacing.xxl }}>
             <UnfinishedList
@@ -165,7 +139,17 @@ export default function ProgressScreen() {
             stats={[
               { icon: 'flame', value: String(streaks.current), label: 'day streak' },
               { icon: 'calendar', value: String(streaks.longest), label: 'longest streak' },
-              { icon: 'book.closed', value: String(chaptersRead), label: 'chapters read' },
+              // Progress is per read-through, so a second time through starts from 0.
+              {
+                icon: 'book.closed',
+                value: chaptersRead.toLocaleString('en-US'),
+                label: 'chapters this read-through',
+              },
+              {
+                icon: 'arrow.counterclockwise',
+                value: String(finishedReadThroughs),
+                label: 'times through the Bible',
+              },
             ]}
           />
         </View>
