@@ -11,6 +11,7 @@ import { SectionHeader } from '@/components/section-header';
 import { SegmentedControl, type SegmentOption } from '@/components/segmented-control';
 import { Text } from '@/components/text';
 import type { AppearancePreference } from '@/db/settings-repository';
+import { countChaptersRead } from '@/features/reading-plan/domain/chapter-progress';
 import { formatReference } from '@/features/reading-plan/domain/reference';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { confirmResetProgress, describeResetImpact } from '@/features/reading-plan/reset-progress';
@@ -23,7 +24,7 @@ import { useAppearanceSetting } from '@/theme/use-appearance-setting';
 export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { activePlan, resetProgress, completions } = useReadingData();
+  const { activePlan, resetProgress, completions, scheduleContext } = useReadingData();
   const { preference, setAppearance } = useAppearanceSetting();
   const reminder = useReminderSettings();
   const [timePickerOpen, setTimePickerOpen] = useState(Platform.OS === 'ios');
@@ -36,10 +37,18 @@ export default function SettingsScreen() {
     });
   }, [resetProgress, router, reminder]);
 
-  const startReference =
+  // Where the reader is: the head of the unread queue, as the day detail reads it. Not
+  // the plan segment's first chapter, which stays put however much is read.
+  const position = scheduleContext.unread[0] ?? null;
+  const currentPosition =
     activePlan === null
       ? 'No plan yet'
-      : formatReference({ bookId: activePlan.startBookId, chapter: activePlan.startChapter });
+      : position === null
+        ? 'Finished'
+        : formatReference(position, scheduleContext.index);
+  // Chapters, as the progress screen counts them: not rows, of which a chapter read in
+  // two sittings has two and a half-read one has one.
+  const chaptersRead = countChaptersRead(completions, scheduleContext.index);
 
   return (
     <Screen scroll edges={['bottom']} contentContainerStyle={{ padding: theme.spacing.xl }}>
@@ -47,7 +56,7 @@ export default function SettingsScreen() {
       <Card padded={false}>
         <FieldRow
           label="Current position"
-          value={startReference}
+          value={currentPosition}
           onPress={() => router.push('/reading-plan')}
           last
           testID="settings-reading-plan"
@@ -149,7 +158,7 @@ export default function SettingsScreen() {
           testID="reset-progress"
         />
         <Text variant="footnote" color="tertiary" style={{ marginTop: theme.spacing.sm }}>
-          {describeResetImpact(completions.length)}
+          {describeResetImpact(chaptersRead)}
         </Text>
       </View>
     </Screen>
