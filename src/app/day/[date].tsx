@@ -1,20 +1,12 @@
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo } from 'react';
 import { View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { EmptyState } from '@/components/empty-state';
-import type { BibleReference, VerseRange } from '@/data/bible/canon';
-import { getCanonIndex } from '@/data/bible/canon-index';
 import { DayDetail } from '@/features/progress/components/day-detail';
-import { getChapterProgress } from '@/features/reading-plan/domain/chapter-progress';
-import { getChapterCompletionDate } from '@/features/reading-plan/domain/reading-position';
-import { getDayReading } from '@/features/reading-plan/domain/schedule';
-import type { DayReading, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
+import { useDayDetail } from '@/features/progress/hooks/use-day-detail';
 import { useReadingData } from '@/features/reading-plan/hooks/reading-data-provider';
 import { useTheme } from '@/theme/theme-provider';
-import { isValidDateKey } from '@/utils/date-key';
-import { completionHaptic, settingChangedHaptic, undoHaptic } from '@/utils/haptics';
 
 export default function DayDetailScreen() {
   const theme = useTheme();
@@ -25,112 +17,8 @@ export default function DayDetailScreen() {
     book?: string;
     chapter?: string;
   }>();
-  const {
-    plans,
-    completions,
-    completionLookup,
-    scheduleContext,
-    today,
-    completeReading,
-    undoReading,
-    undoReadingEntry,
-    changePlan,
-  } = useReadingData();
-
-  const isValid = typeof date === 'string' && isValidDateKey(date);
-
-  const day = useMemo<DayReading | null>(
-    () => (isValid ? getDayReading(plans, date, scheduleContext) : null),
-    [isValid, date, plans, scheduleContext],
-  );
-
-  /** The rows recorded on this day, so each can be described and removed on its own. */
-  const rows = useMemo(
-    () => (isValid ? completionLookup.get(date) ?? [] : []),
-    [isValid, date, completionLookup],
-  );
-
-  /**
-   * The chapter the reader is actually on: the head of the unread queue.
-   *
-   * A missed day schedules nothing, so without this the Custom tab and the catch-up
-   * action would fall back to Genesis 1 and quietly record the wrong chapter.
-   */
-  const currentPosition = scheduleContext.unread[0] ?? null;
-
-  /**
-   * Progress on the day's single scheduled chapter, across every day it was touched.
-   * Verse tracking is offered only for a one-chapter day.
-   */
-  const progress = useMemo(() => {
-    if (day === null || day.scheduled.kind !== 'scheduled') return null;
-    const chapter = day.scheduled.chapters.length === 1 ? day.scheduled.chapters[0] : undefined;
-    if (chapter === undefined) return null;
-    const canonId = day.plan?.canonId ?? 'protestant';
-    return getChapterProgress(completions, chapter, getCanonIndex(canonId));
-  }, [day, completions]);
-
-  /** Progress for any chapter, so the Custom tab can resume an unfinished one. */
-  const canonId = day?.plan?.canonId ?? 'protestant';
-  const getProgressFor = useCallback(
-    (reference: BibleReference) => getChapterProgress(completions, reference, getCanonIndex(canonId)),
-    [completions, canonId],
-  );
-
-  /**
-   * When a chapter was finished, so a control offered for an already-read chapter can
-   * say so instead of presenting itself as untouched.
-   */
-  const getCompletedOnFor = useCallback(
-    (reference: BibleReference) =>
-      getChapterCompletionDate(completions, reference, getCanonIndex(canonId)),
-    [completions, canonId],
-  );
-
-  /**
-   * Arriving from the unfinished list: open Custom with that chapter selected, so the
-   * remaining verses are recorded against the day being viewed rather than back-dated
-   * to whenever the chapter was started.
-   */
-  const focusChapter = useMemo(() => {
-    if (book === undefined || chapter === undefined) return null;
-    const parsed = Number(chapter);
-    if (!Number.isInteger(parsed)) return null;
-    const reference = { bookId: book, chapter: parsed };
-    return getCanonIndex(canonId).isValidReference(reference) ? reference : null;
-  }, [book, chapter, canonId]);
-
-  const handleComplete = useCallback(
-    (chapters: readonly BibleReference[], verses?: VerseRange): boolean => {
-      if (day === null) return false;
-      const logged = completeReading(day.date, chapters, verses).length > 0;
-      if (logged) completionHaptic();
-      return logged;
-    },
-    [day, completeReading],
-  );
-
-  const handleUndo = useCallback(() => {
-    if (day === null) return;
-    undoReading(day.date);
-    undoHaptic();
-  }, [day, undoReading]);
-
-  const handleUndoEntry = useCallback(
-    (id: string) => {
-      undoReadingEntry(id);
-      undoHaptic();
-    },
-    [undoReadingEntry],
-  );
-
-  const handleChangePlan = useCallback(
-    (draft: ReadingPlanDraft) => {
-      changePlan(draft);
-      settingChangedHaptic();
-    },
-    [changePlan],
-  );
+  const { plans } = useReadingData();
+  const detail = useDayDetail(date, book, chapter);
 
   const padding = {
     paddingHorizontal: theme.spacing.xl,
@@ -145,7 +33,7 @@ export default function DayDetailScreen() {
     return <Redirect href="/onboarding" />;
   }
 
-  if (day === null) {
+  if (detail === null) {
     return (
       <View style={[{ backgroundColor: theme.colors.surface }, padding]}>
         <EmptyState
@@ -161,21 +49,7 @@ export default function DayDetailScreen() {
 
   return (
     <View style={[{ backgroundColor: theme.colors.surface }, padding]}>
-      <DayDetail
-        day={day}
-        today={today}
-        onComplete={handleComplete}
-        onUndo={handleUndo}
-        onUndoEntry={handleUndoEntry}
-        onChangePlan={handleChangePlan}
-        completions={completionLookup}
-        rows={rows}
-        progress={progress}
-        getProgressFor={getProgressFor}
-        getCompletedOnFor={getCompletedOnFor}
-        currentPosition={currentPosition}
-        focusChapter={focusChapter}
-      />
+      <DayDetail {...detail} />
     </View>
   );
 }
