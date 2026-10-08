@@ -56,10 +56,12 @@ export interface ScheduleContext {
   /** True when today already has a recorded reading, so it consumes no queue slot. */
   readonly todayRecorded: boolean;
   /**
-   * The day the last chapter was read, once nothing is left owed, for the active plan.
+   * The first day nothing was left owed, for the active plan.
    *
    * A date rather than a flag: days *after* the canon was finished expect no reading,
-   * while the days leading up to it still counted.
+   * while the days leading up to it still counted. It stays set when a chapter is
+   * part-read afterwards: the days in between stay finished, while today and later
+   * follow the live queue and offer that chapter again.
    */
   readonly canonFinishedOn: DateKey | null;
   /**
@@ -93,7 +95,10 @@ export function createScheduleContext(
   const completed = getCompletedChapterKeys(completions, index);
   const canonFinishedOnByPlan = new Map<string, DateKey | null>();
   for (const plan of plans) {
-    const finished = isCanonFullyRead(plan, completed, index, completions);
+    // A cheap gate on the chapters from the start only. Chapters part-read behind the
+    // start are weighed by date in getCanonFinishedOn: one opened after the finish must
+    // not erase it, as it did for an earlier segment when the next one split a chapter.
+    const finished = isCanonFullyRead(plan, completed, index);
     canonFinishedOnByPlan.set(plan.id, finished ? getCanonFinishedOn(plan, completions, index) : null);
   }
 
@@ -198,15 +203,15 @@ export function calculateReadingForDate(
     };
   }
 
-  // Once nothing is owed, every later day is finished rather than missed. The finish
-  // belongs to the segment governing this date, not to whichever plan is active now.
-  const finishedOn = getCanonFinishedOnFor(plan, context);
-  if (finishedOn !== null && compareDateKeys(date, finishedOn) > 0) {
-    return { kind: 'canon-complete' };
-  }
-
   const daysAhead = daysBetweenDateKeys(context.today, date);
-  if (daysAhead < 0) return { kind: 'not-scheduled' };
+  if (daysAhead < 0) {
+    // Once nothing was owed, every later past day is finished rather than missed. The
+    // finish belongs to the segment governing this date, not to the active plan, and a
+    // chapter opened since does not reopen it. Today and later follow the live queue.
+    const finishedOn = getCanonFinishedOnFor(plan, context);
+    const finished = finishedOn !== null && compareDateKeys(date, finishedOn) > 0;
+    return { kind: finished ? 'canon-complete' : 'not-scheduled' };
+  }
 
   const slot = daysBetweenDateKeys(getFirstSlotDay(plan, context), date) * plan.chaptersPerDay;
   if (slot < 0) return { kind: 'not-scheduled' };
