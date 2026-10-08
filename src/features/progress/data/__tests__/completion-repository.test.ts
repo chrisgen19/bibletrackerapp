@@ -1,10 +1,15 @@
 import type { ReadingDatabase } from '@/db/client';
-import { createReadingPlan, replaceActiveReadingPlan } from '@/features/reading-plan/data/reading-plan-repository';
+import {
+  createReadingPlan,
+  getActiveReadingPlan,
+  replaceActiveReadingPlan,
+} from '@/features/reading-plan/data/reading-plan-repository';
 import type { ReadingPlan } from '@/features/reading-plan/domain/types';
 import { createTestDatabase } from '@/test-utils/test-database';
 
 import {
   countAllCompletions,
+  countReadingTowardPlan,
   getAllCompletions,
   getCompletionsForDate,
   getCompletionsForRange,
@@ -286,6 +291,33 @@ describe('extra readings', () => {
     setReadingExtra(db, 'nope', false);
 
     expect(getAllCompletions(db)).toEqual([expect.objectContaining({ isExtra: true })]);
+  });
+
+  it('moves the plan first, then counts the reading in the new segment', () => {
+    // "Move my plan": Revelation 5 logged as an extra on Aug 10, the plan moved on to
+    // Revelation 6 from that day.
+    const [id] = extra('2026-08-10', 5, 'REV');
+
+    countReadingTowardPlan(db, id ?? '', {
+      canonId: 'protestant',
+      startDate: '2026-08-10',
+      startBookId: 'REV',
+      startChapter: 6,
+      chaptersPerDay: 1,
+    });
+
+    const active = getActiveReadingPlan(db);
+    expect(active).toMatchObject({ startDate: '2026-08-10', startBookId: 'REV', startChapter: 6 });
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: active?.id });
+  });
+
+  it('counts the reading toward the plan without moving it when there is nothing to move to', () => {
+    const [id] = extra('2026-08-10', 5, 'REV');
+
+    countReadingTowardPlan(db, id ?? '', null);
+
+    expect(getActiveReadingPlan(db)?.id).toBe(plan.id);
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: plan.id });
   });
 
   it('keeps the extras when the day is undone', () => {

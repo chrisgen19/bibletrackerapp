@@ -3,8 +3,11 @@ import { and, asc, count, eq, gte, lte } from 'drizzle-orm';
 import type { BibleReference, VerseRange } from '@/data/bible/canon';
 import type { ReadingDatabase } from '@/db/client';
 import { readingCompletions, type ReadingCompletionRow } from '@/db/schema';
-import { getGoverningPlan } from '@/features/reading-plan/data/reading-plan-repository';
-import type { ReadingCompletion } from '@/features/reading-plan/domain/types';
+import {
+  getGoverningPlan,
+  replaceActiveReadingPlan,
+} from '@/features/reading-plan/data/reading-plan-repository';
+import type { ReadingCompletion, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
 import type { DateKey } from '@/utils/date-key';
 import { createId } from '@/utils/id';
 
@@ -138,6 +141,24 @@ export function setReadingExtra(db: ReadingDatabase, id: string, isExtra: boolea
       .set(plan === null ? { isExtra } : { isExtra, readingPlanId: plan.id })
       .where(eq(readingCompletions.id, id))
       .run();
+  });
+}
+
+/**
+ * Counts an extra reading toward the plan, first moving the plan to `draft` when one is
+ * given ("Move my plan"; without one, "Count toward plan").
+ *
+ * One transaction: the reading joins the plan only once the plan has moved, so it lands
+ * in the new segment governing its day, and a failure leaves neither change behind.
+ */
+export function countReadingTowardPlan(
+  db: ReadingDatabase,
+  id: string,
+  draft: ReadingPlanDraft | null,
+): void {
+  db.transaction((tx) => {
+    if (draft !== null) replaceActiveReadingPlan(tx, draft);
+    setReadingExtra(tx, id, false);
   });
 }
 

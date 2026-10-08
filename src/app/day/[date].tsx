@@ -103,7 +103,7 @@ export default function DayDetailScreen() {
   const handleComplete = useCallback(
     (chapters: readonly BibleReference[], verses?: VerseRange): boolean => {
       if (day === null) return false;
-      const logged = completeReading(day.date, chapters, verses);
+      const logged = completeReading(day.date, chapters, verses).length > 0;
       if (logged) completionHaptic();
       return logged;
     },
