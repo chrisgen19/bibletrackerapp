@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, max } from 'drizzle-orm';
 
 import type { ReadingDatabase } from '@/db/client';
 import { readingCompletions, readingPlans, type ReadingPlanRow } from '@/db/schema';
+import { resolvePlanForDate } from '@/features/reading-plan/domain/schedule';
 import type { ReadingPlan, ReadingPlanDraft } from '@/features/reading-plan/domain/types';
-import { addDaysToDateKey } from '@/utils/date-key';
+import { addDaysToDateKey, type DateKey } from '@/utils/date-key';
 import { createId } from '@/utils/id';
 
 /**
@@ -22,6 +23,7 @@ function toDomain(row: ReadingPlanRow): ReadingPlan {
     createdAt: row.createdAt,
     isActive: row.isActive,
     endDate: row.endDate,
+    readThrough: row.readThrough,
   };
 }
 
@@ -47,21 +49,21 @@ export function getAllReadingPlans(db: ReadingDatabase): ReadingPlan[] {
     .map(toDomain);
 }
 
-export function createReadingPlan(db: ReadingDatabase, draft: ReadingPlanDraft): ReadingPlan {
-  const plan: ReadingPlan = {
-    id: createId(),
-    canonId: draft.canonId,
-    startDate: draft.startDate,
-    startBookId: draft.startBookId,
-    startChapter: draft.startChapter,
-    chaptersPerDay: draft.chaptersPerDay,
-    createdAt: Date.now(),
-    isActive: true,
-    endDate: null,
-  };
+/**
+ * The segment a reading on `date` belongs to: the one governing that day, or the active
+ * one for a day no segment covers (before the plan began).
+ */
+export function getGoverningPlan(db: ReadingDatabase, date: DateKey): ReadingPlan | null {
+  return resolvePlanForDate(getAllReadingPlans(db), date) ?? getActiveReadingPlan(db);
+}
 
-  db.insert(readingPlans).values(plan).run();
-  return plan;
+/** Onboarding carries on the latest read-through: 1 for a new reader, and again after a reset. */
+export function createReadingPlan(db: ReadingDatabase, draft: ReadingPlanDraft): ReadingPlan {
+  return db.transaction((tx) => {
+    const plan = toNewPlan(draft, getLatestReadThrough(tx));
+    tx.insert(readingPlans).values(plan).run();
+    return plan;
+  });
 }
 
 /**
@@ -73,36 +75,73 @@ export function createReadingPlan(db: ReadingDatabase, draft: ReadingPlanDraft):
  */
 export function replaceActiveReadingPlan(db: ReadingDatabase, draft: ReadingPlanDraft): ReadingPlan {
   return db.transaction((tx) => {
-    const active = tx.select().from(readingPlans).where(eq(readingPlans.isActive, true)).all();
-
-    // The outgoing segment governs up to the day before the new one begins. When
-    // both start on the same day the old segment ends up with `endDate < startDate`,
-    // which matches no date at all — exactly the intent, and completions recorded
-    // against it are untouched.
-    const closeOn = addDaysToDateKey(draft.startDate, -1);
-
-    for (const row of active) {
-      tx.update(readingPlans)
-        .set({ isActive: false, endDate: closeOn })
-        .where(eq(readingPlans.id, row.id))
-        .run();
-    }
-
-    const plan: ReadingPlan = {
-      id: createId(),
-      canonId: draft.canonId,
-      startDate: draft.startDate,
-      startBookId: draft.startBookId,
-      startChapter: draft.startChapter,
-      chaptersPerDay: draft.chaptersPerDay,
-      createdAt: Date.now(),
-      isActive: true,
-      endDate: null,
-    };
-
-    tx.insert(readingPlans).values(plan).run();
-    return plan;
+    // A new position stays in the same read-through.
+    const active = getActiveReadingPlan(tx);
+    return replaceActiveSegment(tx, draft, active?.readThrough ?? getLatestReadThrough(tx));
   });
+}
+
+/**
+ * Starts the next time through the Bible: the same close-then-insert as a position
+ * change, one read-through on. Nothing is deleted; plan progress simply counts the new
+ * read-through from here.
+ *
+ * Returns null, writing nothing, when there is no open segment or `isFinished` says the
+ * read-through in progress is not finished. It is asked inside this transaction, of the
+ * stored readings (`stored` is the transaction), so a second tap after the first has
+ * started read-through N + 1 finds it unfinished and starts nothing.
+ */
+export function startNextReadThrough(
+  db: ReadingDatabase,
+  draft: ReadingPlanDraft,
+  isFinished: (stored: ReadingDatabase) => boolean,
+): ReadingPlan | null {
+  return db.transaction((tx) => {
+    const active = getActiveReadingPlan(tx);
+    if (active === null || !isFinished(tx)) return null;
+    return replaceActiveSegment(tx, draft, (active.readThrough ?? 1) + 1);
+  });
+}
+
+function replaceActiveSegment(db: ReadingDatabase, draft: ReadingPlanDraft, readThrough: number): ReadingPlan {
+  const active = db.select().from(readingPlans).where(eq(readingPlans.isActive, true)).all();
+
+  // The outgoing segment governs up to the day before the new one begins. When
+  // both start on the same day the old segment ends up with `endDate < startDate`,
+  // which matches no date at all — exactly the intent, and completions recorded
+  // against it are untouched.
+  const closeOn = addDaysToDateKey(draft.startDate, -1);
+
+  for (const row of active) {
+    db.update(readingPlans)
+      .set({ isActive: false, endDate: closeOn })
+      .where(eq(readingPlans.id, row.id))
+      .run();
+  }
+
+  const plan = toNewPlan(draft, readThrough);
+  db.insert(readingPlans).values(plan).run();
+  return plan;
+}
+
+/** The highest read-through stored, or 1 when there are no plans. */
+function getLatestReadThrough(db: ReadingDatabase): number {
+  return db.select({ value: max(readingPlans.readThrough) }).from(readingPlans).get()?.value ?? 1;
+}
+
+function toNewPlan(draft: ReadingPlanDraft, readThrough: number): ReadingPlan {
+  return {
+    id: createId(),
+    canonId: draft.canonId,
+    startDate: draft.startDate,
+    startBookId: draft.startBookId,
+    startChapter: draft.startChapter,
+    chaptersPerDay: draft.chaptersPerDay,
+    createdAt: Date.now(),
+    isActive: true,
+    endDate: null,
+    readThrough,
+  };
 }
 
 /** Destructive: drops all plans and, by cascade, all completions. */

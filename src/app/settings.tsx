@@ -24,7 +24,7 @@ import { useAppearanceSetting } from '@/theme/use-appearance-setting';
 export default function SettingsScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { activePlan, resetProgress, completions, scheduleContext } = useReadingData();
+  const { activePlan, resetProgress, completions, planScheduleContext } = useReadingData();
   const { preference, setAppearance } = useAppearanceSetting();
   const reminder = useReminderSettings();
   const [timePickerOpen, setTimePickerOpen] = useState(Platform.OS === 'ios');
@@ -39,16 +39,17 @@ export default function SettingsScreen() {
 
   // Where the reader is: the head of the unread queue, as the day detail reads it. Not
   // the plan segment's first chapter, which stays put however much is read.
-  const position = scheduleContext.unread[0] ?? null;
+  const position = planScheduleContext.unread[0] ?? null;
   const currentPosition =
     activePlan === null
       ? 'No plan yet'
       : position === null
         ? 'Finished'
-        : formatReference(position, scheduleContext.index);
+        : formatReference(position, planScheduleContext.index);
   // Chapters, as the progress screen counts them: not rows, of which a chapter read in
-  // two sittings has two and a half-read one has one.
-  const chaptersRead = countChaptersRead(completions, scheduleContext.index);
+  // two sittings has two and a half-read one has one. A lifetime count, extras and every
+  // read-through included, since a reset deletes them all.
+  const chaptersRead = countChaptersRead(completions, planScheduleContext.index);
 
   return (
     <Screen scroll edges={['bottom']} contentContainerStyle={{ padding: theme.spacing.xl }}>

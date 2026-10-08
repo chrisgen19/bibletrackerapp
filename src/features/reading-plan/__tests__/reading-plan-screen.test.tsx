@@ -2,7 +2,7 @@
 // position: Genesis 5" in Settings led to fields reading Genesis 1. The screen is a
 // route, and tests never live inside `src/app`, so it is rendered from here.
 import ReadingPlanScreen from '@/app/reading-plan';
-import { readerPartWayThrough } from '@/test-utils/reading-scenarios';
+import { readerPartWayThrough, readerWithAnExtraToday } from '@/test-utils/reading-scenarios';
 import { renderWithTheme } from '@/test-utils/render';
 
 let mockReadingData: Record<string, unknown> = {};
@@ -22,5 +22,14 @@ describe('ReadingPlanScreen', () => {
     // The rows' accessibility labels are "<label>, <value>".
     expect(getByTestId('field-book').props.accessibilityLabel).toBe('Book, Genesis');
     expect(getByTestId('field-chapter').props.accessibilityLabel).toBe('Chapter, 5');
+  });
+
+  // #19: the plan's view. On the web the screen showed an extra as today's reading.
+  it("shows the plan's reading for today, not an extra logged today", async () => {
+    mockReadingData = { ...readerWithAnExtraToday(), changePlan: jest.fn() };
+    const { getByText, queryByText } = await renderWithTheme(<ReadingPlanScreen />);
+
+    expect(getByText('Genesis 5')).toBeTruthy();
+    expect(queryByText('Revelation 5')).toBeNull();
   });
 });

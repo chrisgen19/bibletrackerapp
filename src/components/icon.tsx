@@ -14,7 +14,8 @@ export type IconName =
   | 'book.closed'
   | 'flame'
   | 'calendar'
-  | 'bell';
+  | 'bell'
+  | 'arrow.counterclockwise';
 
 /** Stroke paths on a 24×24 canvas, mirroring the SF Symbol silhouettes. */
 const FALLBACK_PATHS: Record<IconName, string> = {
@@ -29,6 +30,7 @@ const FALLBACK_PATHS: Record<IconName, string> = {
   calendar:
     'M4.5 7.5 h15 M7 4 v3 M17 4 v3 M5.5 5.5 h13 a1 1 0 0 1 1 1 v13 a1 1 0 0 1 -1 1 h-13 a1 1 0 0 1 -1 -1 v-13 a1 1 0 0 1 1 -1',
   bell: 'M6.5 17.5 v-6 a5.5 5.5 0 0 1 11 0 v6 M4.5 17.5 h15 M10 20.5 a2.2 2.2 0 0 0 4 0',
+  'arrow.counterclockwise': 'M5 12 a7 7 0 1 0 2.05 -4.95 M4.5 3.5 v4 h4',
 };
 
 export interface IconProps {

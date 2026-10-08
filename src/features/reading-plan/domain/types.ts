@@ -19,6 +19,11 @@ export interface ReadingPlan {
   readonly isActive: boolean;
   /** Last day this segment governs, inclusive. `null` while the segment is open-ended. */
   readonly endDate: DateKey | null;
+  /**
+   * Which time through the Bible this segment belongs to. Plan progress counts the current
+   * read-through only. Absent means 1, as for a segment written before read-throughs.
+   */
+  readonly readThrough?: number;
 }
 
 /** A completion event. Book/chapter are snapshotted so history survives plan changes. */
@@ -34,6 +39,12 @@ export interface ReadingCompletion {
    */
   readonly verses: VerseRange | null;
   readonly completedAt: number;
+  /**
+   * An extra reading: shown on its day and counted toward the streak, but never part of
+   * the plan's chapter progress. Absent means a plan reading, as for a row written before
+   * extra readings.
+   */
+  readonly isExtra?: boolean;
 }
 
 /** What a given calendar day asks the user to read. */

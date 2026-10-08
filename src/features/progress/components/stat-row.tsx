@@ -11,21 +11,23 @@ interface Stat {
   label: string;
 }
 
-/** Supporting statistics beneath the calendar: streak, best streak, total read. */
+/**
+ * Supporting statistics beneath the calendar, two to a row. Four tiles side by side
+ * leave a phone's labels too narrow to read ("chapters this read-through").
+ */
 export function StatRow({ stats }: { stats: readonly Stat[] }) {
   const theme = useTheme();
 
   return (
-    <View style={styles.row}>
-      {stats.map((stat, index) => (
+    <View style={[styles.grid, { gap: theme.spacing.md }]}>
+      {stats.map((stat) => (
         <Card
           key={stat.label}
           padded={false}
           style={{
-            flex: 1,
+            ...styles.tile,
             paddingVertical: theme.spacing.lg,
             paddingHorizontal: theme.spacing.md,
-            marginLeft: index === 0 ? 0 : theme.spacing.md,
           }}
         >
           <View accessible accessibilityLabel={`${stat.value} ${stat.label}`}>
@@ -44,5 +46,7 @@ export function StatRow({ stats }: { stats: readonly Stat[] }) {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap' },
+  // Grows to fill half the row: two per row with the gap between them.
+  tile: { flexBasis: '40%', flexGrow: 1 },
 });

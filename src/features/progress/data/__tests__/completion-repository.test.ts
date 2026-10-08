@@ -1,16 +1,22 @@
 import type { ReadingDatabase } from '@/db/client';
-import { createReadingPlan } from '@/features/reading-plan/data/reading-plan-repository';
+import {
+  createReadingPlan,
+  getActiveReadingPlan,
+  replaceActiveReadingPlan,
+} from '@/features/reading-plan/data/reading-plan-repository';
 import type { ReadingPlan } from '@/features/reading-plan/domain/types';
 import { createTestDatabase } from '@/test-utils/test-database';
 
 import {
   countAllCompletions,
+  countReadingTowardPlan,
   getAllCompletions,
   getCompletionsForDate,
   getCompletionsForRange,
   markReadingComplete,
   removeCompletionById,
   removeReadingCompletion,
+  setReadingExtra,
 } from '../completion-repository';
 
 let db: ReadingDatabase;
@@ -173,5 +179,172 @@ describe('removeCompletionById', () => {
     complete('2026-08-30', 6, 'LEV');
     removeCompletionById(db, 'nope');
     expect(countAllCompletions(db)).toBe(1);
+  });
+});
+
+// #19: extra readings.
+describe('extra readings', () => {
+  function extra(localDate: string, chapter: number, bookId = 'GEN') {
+    return markReadingComplete(db, {
+      readingPlanId: plan.id,
+      localDate,
+      chapters: [{ bookId, chapter }],
+      completedAt: 1_000,
+      isExtra: true,
+    });
+  }
+
+  const rowById = (id: string | undefined) => getAllCompletions(db).find((row) => row.id === id);
+
+  /** A new segment from `startDate`, as a position change or the next read-through makes. */
+  const moveTo = (startDate: string) =>
+    replaceActiveReadingPlan(db, {
+      canonId: 'protestant',
+      startDate,
+      startBookId: 'GEN',
+      startChapter: 1,
+      chaptersPerDay: 1,
+    });
+
+  it('records a plan reading unless told otherwise', () => {
+    complete('2026-08-01', 1);
+    extra('2026-08-01', 5, 'REV');
+
+    expect(getCompletionsForDate(db, '2026-08-01')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ bookId: 'GEN', isExtra: false }),
+        expect.objectContaining({ bookId: 'REV', isExtra: true }),
+      ]),
+    );
+  });
+
+  it('returns the stored row for each chapter', () => {
+    const ids = markReadingComplete(db, {
+      readingPlanId: plan.id,
+      localDate: '2026-08-01',
+      chapters: [
+        { bookId: 'GEN', chapter: 1 },
+        { bookId: 'GEN', chapter: 2 },
+      ],
+    });
+
+    expect(ids.map((id) => rowById(id)?.chapter)).toEqual([1, 2]);
+  });
+
+  it('returns the row already there when the span was recorded before', () => {
+    const [first] = extra('2026-08-01', 5, 'REV');
+    const [again] = extra('2026-08-01', 5, 'REV');
+
+    expect(again).toBe(first);
+    expect(countAllCompletions(db)).toBe(1);
+  });
+
+  it('brings an extra of the same day and span into the plan instead of skipping it', () => {
+    const [id] = extra('2026-08-10', 1);
+    const next = moveTo('2026-08-10');
+
+    const [planned] = markReadingComplete(db, {
+      readingPlanId: next.id,
+      localDate: '2026-08-10',
+      chapters: [{ bookId: 'GEN', chapter: 1 }],
+    });
+
+    expect(planned).toBe(id);
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: next.id });
+    expect(countAllCompletions(db)).toBe(1);
+  });
+
+  it('never demotes a plan reading to an extra', () => {
+    complete('2026-08-01', 1);
+    extra('2026-08-01', 1);
+
+    expect(getCompletionsForDate(db, '2026-08-01')).toEqual([expect.objectContaining({ isExtra: false })]);
+  });
+
+  it('switches a reading out of the plan and back', () => {
+    const [id] = markReadingComplete(db, {
+      readingPlanId: plan.id,
+      localDate: '2026-08-01',
+      chapters: [{ bookId: 'GEN', chapter: 1 }],
+    });
+
+    setReadingExtra(db, id ?? '', true);
+    expect(rowById(id)).toMatchObject({ isExtra: true, readingPlanId: plan.id });
+
+    setReadingExtra(db, id ?? '', false);
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: plan.id });
+  });
+
+  it('moves a reading joining the plan to the segment governing its day', () => {
+    // Logged as an extra on Aug 10, then a new segment began that same day (the next
+    // read-through, say): counted toward the plan, it belongs to the new segment.
+    const [id] = extra('2026-08-10', 1);
+    const next = moveTo('2026-08-10');
+
+    setReadingExtra(db, id ?? '', false);
+
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: next.id });
+  });
+
+  it('is a no-op for an id that is not there', () => {
+    extra('2026-08-01', 5, 'REV');
+    setReadingExtra(db, 'nope', false);
+
+    expect(getAllCompletions(db)).toEqual([expect.objectContaining({ isExtra: true })]);
+  });
+
+  it('moves the plan first, then counts the reading in the new segment', () => {
+    // "Move my plan": Revelation 5 logged as an extra on Aug 10, the plan moved on to
+    // Revelation 6 from that day.
+    const [id] = extra('2026-08-10', 5, 'REV');
+
+    countReadingTowardPlan(db, id ?? '', {
+      canonId: 'protestant',
+      startDate: '2026-08-10',
+      startBookId: 'REV',
+      startChapter: 6,
+      chaptersPerDay: 1,
+    });
+
+    const active = getActiveReadingPlan(db);
+    expect(active).toMatchObject({ startDate: '2026-08-10', startBookId: 'REV', startChapter: 6 });
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: active?.id });
+  });
+
+  it('counts the reading toward the plan without moving it when there is nothing to move to', () => {
+    const [id] = extra('2026-08-10', 5, 'REV');
+
+    countReadingTowardPlan(db, id ?? '', null);
+
+    expect(getActiveReadingPlan(db)?.id).toBe(plan.id);
+    expect(rowById(id)).toMatchObject({ isExtra: false, readingPlanId: plan.id });
+  });
+
+  // Review on #22 (CodeRabbit): a stale id must not move the plan on its own.
+  it('moves nothing when the reading is no longer stored', () => {
+    const [id] = extra('2026-08-10', 5, 'REV');
+    removeCompletionById(db, id ?? '');
+
+    countReadingTowardPlan(db, id ?? '', {
+      canonId: 'protestant',
+      startDate: '2026-08-10',
+      startBookId: 'REV',
+      startChapter: 6,
+      chaptersPerDay: 1,
+    });
+
+    expect(getActiveReadingPlan(db)?.id).toBe(plan.id);
+    expect(getAllCompletions(db)).toEqual([]);
+  });
+
+  it('keeps the extras when the day is undone', () => {
+    complete('2026-08-01', 1);
+    extra('2026-08-01', 5, 'REV');
+
+    removeReadingCompletion(db, '2026-08-01');
+
+    expect(getCompletionsForDate(db, '2026-08-01')).toEqual([
+      expect.objectContaining({ bookId: 'REV', isExtra: true }),
+    ]);
   });
 });

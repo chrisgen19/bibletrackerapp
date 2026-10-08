@@ -47,6 +47,12 @@ async function renderDetail(day: DayReading, handlers: Partial<Parameters<typeof
       onUndo={onUndo}
       onUndoEntry={onUndoEntry}
       onChangePlan={onChangePlan}
+      // No extras, and every log is a plan reading: what these tests were written for.
+      onLogExtra={handlers.onLogExtra ?? (() => null)}
+      extraRows={handlers.extraRows ?? []}
+      onSetExtra={handlers.onSetExtra ?? jest.fn()}
+      onCountTowardPlan={handlers.onCountTowardPlan ?? jest.fn()}
+      classifyReading={handlers.classifyReading ?? (() => 'plan')}
       completions={handlers.completions ?? createCompletionLookup([])}
       rows={handlers.rows ?? rowsFor(day)}
       progress={handlers.progress ?? null}

@@ -28,10 +28,11 @@ import { settingChangedHaptic } from '@/utils/haptics';
 export default function ReadingPlanScreen() {
   const theme = useTheme();
   const router = useRouter();
-  const { activePlan, today, changePlan, scheduleContext } = useReadingData();
+  // The plan's view: an extra reading logged today is not today's reading.
+  const { activePlan, today, changePlan, planScheduleContext } = useReadingData();
 
   const currentToday =
-    activePlan === null ? null : calculateReadingForDate(activePlan, today, scheduleContext);
+    activePlan === null ? null : calculateReadingForDate(activePlan, today, planScheduleContext);
   const currentReference =
     currentToday?.kind === 'scheduled' && currentToday.chapters[0] !== undefined
       ? formatReference(currentToday.chapters[0])
@@ -40,7 +41,7 @@ export default function ReadingPlanScreen() {
   // Opens on where the reader is, the value Settings shows for "Current position", not on
   // the plan segment's first chapter.
   const [position, setPosition] = useState(() => {
-    const here = scheduleContext.unread[0];
+    const here = planScheduleContext.unread[0];
     return {
       bookId: here?.bookId ?? activePlan?.startBookId ?? 'GEN',
       chapter: here?.chapter ?? activePlan?.startChapter ?? 1,

@@ -70,6 +70,9 @@ export interface ScheduleContext {
    * Each segment finishes on its own terms. Applying the active plan's date to every
    * segment turned an earlier segment's finished days into missed ones once the reader
    * moved on, and lent a later segment's date to days an earlier one still owed.
+   *
+   * The provider replaces this with `getSegmentFinishDates`, which measures each segment
+   * against its own read-through.
    */
   readonly canonFinishedOnByPlan: ReadonlyMap<string, DateKey | null>;
   /** Chapters read in full, so slots past the cached queue can be derived on demand. */
@@ -85,6 +88,13 @@ export function createScheduleContext(
   today: DateKey = getTodayDateKey(),
   /** Injectable for tests; otherwise taken from the plan that governs today. */
   injectedIndex?: CanonIndex,
+  /**
+   * The rows that move the plan: the queue, what is finished and whether today's slot is
+   * used. Defaults to every row. The provider passes the current read-through's plan
+   * readings, so an extra reading shows on its day (`byDate`) without stepping the queue
+   * past its chapter.
+   */
+  progressCompletions: readonly ReadingCompletion[] = completions,
 ): ScheduleContext {
   const byDate = createCompletionLookup(completions);
   // Resolve the plan first: the canon belongs to the plan in force now, not to
@@ -92,21 +102,27 @@ export function createScheduleContext(
   const active = resolvePlanForDate(plans, today) ?? plans[plans.length - 1] ?? null;
   const index = injectedIndex ?? getCanonIndex(active?.canonId ?? 'protestant');
 
-  const completed = getCompletedChapterKeys(completions, index);
+  const completed = getCompletedChapterKeys(progressCompletions, index);
   const canonFinishedOnByPlan = new Map<string, DateKey | null>();
   for (const plan of plans) {
     // A cheap gate on the chapters from the start only. Chapters part-read behind the
     // start are weighed by date in getCanonFinishedOn: one opened after the finish must
     // not erase it, as it did for an earlier segment when the next one split a chapter.
     const finished = isCanonFullyRead(plan, completed, index);
-    canonFinishedOnByPlan.set(plan.id, finished ? getCanonFinishedOn(plan, completions, index) : null);
+    canonFinishedOnByPlan.set(
+      plan.id,
+      finished ? getCanonFinishedOn(plan, progressCompletions, index) : null,
+    );
   }
 
   return {
     byDate,
-    unread: active === null ? [] : getUnreadSequence(active, completed, index, undefined, completions),
+    unread:
+      active === null ? [] : getUnreadSequence(active, completed, index, undefined, progressCompletions),
     today,
-    todayRecorded: byDate.has(today),
+    // An extra reading does not use today's slot; any other reading does, including one
+    // that closed the previous read-through. Without extras this is `byDate.has(today)`.
+    todayRecorded: (byDate.get(today) ?? []).some((completion) => completion.isExtra !== true),
     canonFinishedOn: active === null ? null : canonFinishedOnByPlan.get(active.id) ?? null,
     canonFinishedOnByPlan,
     completedKeys: completed,
