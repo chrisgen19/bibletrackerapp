@@ -1,9 +1,8 @@
-
-import type { ScheduleContext } from '@/features/reading-plan/domain/schedule';
 import {
   getEarliestPlanStart,
   isScheduledDay,
   type CompletionLookup,
+  type ScheduleContext,
 } from '@/features/reading-plan/domain/schedule';
 import type { ReadingPlan } from '@/features/reading-plan/domain/types';
 import { compareDateKeys, minDateKey, type DateKey } from '@/utils/date-key';

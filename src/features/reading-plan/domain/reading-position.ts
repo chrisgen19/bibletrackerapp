@@ -1,9 +1,9 @@
 import type { BibleReference } from '@/data/bible/canon';
 import { getCanonIndex, type CanonIndex } from '@/data/bible/canon-index';
+import { compareDateKeys, type DateKey } from '@/utils/date-key';
 
 import { getChapterProgress } from './chapter-progress';
 import type { ReadingCompletion, ReadingPlan } from './types';
-import { compareDateKeys, type DateKey } from '@/utils/date-key';
 import { isChapterComplete, mergeVerseRanges, wholeChapter } from './verse-range';
 
 /**
